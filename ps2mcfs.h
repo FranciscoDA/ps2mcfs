@@ -51,7 +51,7 @@ struct superblock_t {
 	uint8_t flags;
 };
 
-struct superblock_t* ps2mcfs_get_superblock(void* data);
+struct superblock_t* ps2mcfs_get_superblock(void* data, size_t size);
 void ps2mcfs_get_dirent(struct superblock_t* s, void* data, uint32_t clus0, uint32_t entrynum, struct dir_entry_t** dest);
 int ps2mcfs_browse (struct superblock_t* s, void* data, const char* path, uint32_t* destclus, struct dir_entry_t** destdirent);
 void ps2mcfs_stat(struct dir_entry_t* dirent, struct stat* stbuf);

@@ -39,8 +39,19 @@ time_t date_time_to_timestamp(struct date_time_t* dt) {
 	return mktime(&time);
 }
 
-struct superblock_t* ps2mcfs_get_superblock(void* data) {
-	return (struct superblock_t*)(data);
+struct superblock_t* ps2mcfs_get_superblock(void* data, size_t size) {
+	if (size < sizeof(struct superblock_t)) {
+		return NULL;
+	}
+	struct superblock_t* s = (struct superblock_t*) data;
+	char magic[] = "Sony PS2 Memory Card Format 1.2.0.0";
+	if (strncmp(s->magic, magic, sizeof(magic)) == 0 &&
+			s->clusters_per_card * s->pages_per_cluster * s->page_size == size &&
+			size % (1024*1024) == 0 &&
+			s->type == 2) {
+		return s;
+	}
+	return NULL;
 }
 
 uint32_t get_fat_entry(struct superblock_t* s, void* data, uint32_t clus) {

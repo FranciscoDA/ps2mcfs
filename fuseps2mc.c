@@ -16,7 +16,7 @@
 
 static char vmc_file_path[PATH_MAX];
 static void* vmc_raw_data;
-static struct superblock_t* vmc_superblock = 0;
+static struct superblock_t* vmc_superblock = NULL;
 
 static void* do_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
 	FILE* f = fopen(vmc_file_path, "rb");
@@ -26,7 +26,7 @@ static void* do_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
 	vmc_raw_data = malloc(size);
 	fread(vmc_raw_data, size, 1, f);
 	fclose(f);
-	vmc_superblock = ps2mcfs_get_superblock(vmc_raw_data);
+	vmc_superblock = ps2mcfs_get_superblock(vmc_raw_data, size);
 	return NULL;
 }
 
@@ -98,3 +98,4 @@ int main(int argc, char** argv) {
 	realpath(argv[1], vmc_file_path);
 	return fuse_main(nargc, nargv, &operations, NULL);
 }
+
