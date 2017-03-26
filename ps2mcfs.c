@@ -10,31 +10,41 @@
 #include <time.h>
 #include <sys/param.h>
 
+#include "fat.h"
 #include "ps2mcfs.h"
 
-bool is_directory(struct dir_entry_t* dirent) {
+#define div_ceil(x, y) ((x)/(y) + ((x)%(y) != 0))
+
+bool ps2mcfs_is_directory(const struct dir_entry_t* const dirent) {
 	return dirent->mode & 0x20;
 }
-bool is_file(struct dir_entry_t* dirent) {
+bool ps2mcfs_is_file(const struct dir_entry_t* const dirent) {
 	return dirent->mode & 0x10;
 }
-uint32_t cluster_size(struct superblock_t* s) {
-	return s->page_size * s->pages_per_cluster;
+/**
+ * returns the absolute offset in bytes to the relative cluster 'clus'
+ */
+void* relative_to_absolute(void* data, off_t offset) {
+	struct superblock_t* s = (struct superblock_t*) data;
+	return data + s->first_allocatable * fat_cluster_size(s) + offset;
 }
-uint32_t relative_cluster_offset(struct superblock_t* s, uint32_t clus) {
-	return (s->first_allocatable+clus) * cluster_size(s);
+
+void date_time_now(struct date_time_t* dt) {
+	struct tm t;
+	time_t now = time(NULL);
+	gmtime_r(&now, &t);
+	dt->second = t.tm_sec;
+	dt->minute = t.tm_min;
+	dt->hour = t.tm_hour;
+	dt->day = t.tm_mday;
+	dt->month = t.tm_mon+1;
+	dt->year = t.tm_year+1900;
 }
-time_t date_time_to_timestamp(struct date_time_t* dt) {
+time_t date_time_to_timestamp(const struct date_time_t* const dt) {
 	struct tm time = {
-		dt->second,
-		dt->minute,
-		dt->hour,
-		dt->day,
-		dt->month-1,
-		dt->year-1900,
-		0,
-		0,
-		0
+		dt->second, dt->minute, dt->hour,
+		dt->day, dt->month-1, dt->year-1900,
+		0, 0, 0
 	};
 	return mktime(&time);
 }
@@ -54,9 +64,18 @@ struct superblock_t* ps2mcfs_get_superblock(void* data, size_t size) {
 	return NULL;
 }
 
-uint32_t get_fat_entry(struct superblock_t* s, void* data, uint32_t clus) {
-	uint32_t csize = cluster_size(s);
-	uint32_t k = csize / 4; // fat/indirfat entries per cluster
+size_t fat_cluster_size(void* data) {
+	struct superblock_t* s = (struct superblock_t*) data;
+	return s->page_size * s->pages_per_cluster;
+}
+cluster_t fat_max_cluster(void* data) {
+	struct superblock_t* s = (struct superblock_t*) data;
+	return s->last_allocatable;
+}
+cluster_t* fat_get_entry_position(void* data, cluster_t clus) {
+	struct superblock_t* s = (struct superblock_t*) data;
+	uint32_t csize = fat_cluster_size(data);
+	uint32_t k = csize / sizeof(cluster_t); // fat/indirfat entries per cluster
 	uint32_t fat_offset = clus % k;
 	uint32_t indirect_index = clus / k;
 	uint32_t indirect_offset = indirect_index % k;
@@ -64,55 +83,69 @@ uint32_t get_fat_entry(struct superblock_t* s, void* data, uint32_t clus) {
 	uint32_t indirect_cluster_num = s->indirect_fat_clusters[dbl_indirect_index];
 	void* fat_cluster_pos = data + indirect_cluster_num * csize + indirect_offset*4;
 	uint32_t fat_cluster_num = *((uint32_t*) fat_cluster_pos);
-	void* fat_entry_pos = data + fat_cluster_num * csize + fat_offset*4;
-	return *((uint32_t*) fat_entry_pos);
+	return (cluster_t*) (data + fat_cluster_num * csize + fat_offset*sizeof(cluster_t));
+}
+cluster_t fat_get_table_entry(void* data, cluster_t clus) {
+	return *(fat_get_entry_position(data, clus));
+}
+void fat_set_table_entry(void* data, cluster_t clus, cluster_t newval) {
+	*fat_get_entry_position(data, clus) = newval;
 }
 
-void ps2mcfs_get_dirent(struct superblock_t* s, void* data, uint32_t clus0, uint32_t entrynum, struct dir_entry_t** dest) {
-	uint32_t k = cluster_size(s) / sizeof(struct dir_entry_t); // directory entries per cluster
-	uint32_t clusn = entrynum / k;
-	while (clusn > 0) {
-		clus0 = get_fat_entry(s, data, clus0) - 0x80000000;
-		--clusn;
-	}
-	uint32_t cluster_offset = relative_cluster_offset(s, clus0) + (entrynum % k) * sizeof(struct dir_entry_t);
-	*dest = (struct dir_entry_t*) (data + cluster_offset);
+int ps2mcfs_get_child(void* data, cluster_t clus0, off_t entrynum, struct dir_entry_t* dest) {
+	off_t offset;
+	if (!fat_seek_bytes(data, clus0, entrynum * sizeof(struct dir_entry_t), &offset))
+		return -ENOENT;
+	*dest = *((struct dir_entry_t*) relative_to_absolute(data, offset));
+	return 0;
+}
+int ps2mcfs_set_child(void* data, cluster_t clus0, off_t entrynum, const struct dir_entry_t* const src) {
+	off_t offset;
+	if (!fat_seek_bytes(data, clus0, entrynum * sizeof(struct dir_entry_t), &offset))
+		return -ENOENT;
+	*((struct dir_entry_t*) relative_to_absolute(data, offset)) = *src;
+	return 0;
 }
 
-int ps2mcfs_browse (struct superblock_t* s, void* data, const char* path, uint32_t* destclus, struct dir_entry_t** destdirent) {
+/**
+ * climb up one node from the 'dirent' directory and store the result in place
+ */
+void ps2mcfs_climb(void* data, struct dir_entry_t* dirent) {
+	ps2mcfs_get_child(data, dirent->cluster, 0, dirent); // dirent's '.' entry
+	ps2mcfs_get_child(data, dirent->cluster, 0, dirent); // get parent '.' entry
+	ps2mcfs_get_child(data, dirent->cluster, dirent->dir_entry, dirent); // get parent entry from grandparent
+}
+
+/**
+ * Fetch the dirent that corresponds to 'path'
+ * the dirent is returned in the destdirent pointer
+ *
+ */
+int ps2mcfs_browse(const struct superblock_t* const s, void* data, const char* path, struct dir_entry_t* destdirent) {
 	const char* slash = strchr(path, '/');
-	struct dir_entry_t* dirent;
-	uint32_t clus0 = s->root_cluster;
-	ps2mcfs_get_dirent(s, data, clus0, 0, &dirent);
-	while (true) {
+	struct dir_entry_t dirent;
+	ps2mcfs_get_child(data, s->root_cluster, 0, &dirent);
+	while (slash != NULL) {
 		if (slash != path) {
-			if (!is_directory(dirent)) {
+			if (!ps2mcfs_is_directory(&dirent))
 				return -ENOENT;
-			}
-			if (slash-path >= 32) {
+			if (slash-path >= 32)
 				return -EINVAL;
-			}
 			if (slash-path == 2 && strncmp(path, "..", 2) == 0) {
-				struct dir_entry_t* dirent2;
-				ps2mcfs_get_dirent(s, data, clus0, 0, &dirent2);
-				clus0 = dirent2->cluster;
-				ps2mcfs_get_dirent(s, data, clus0, 0, &dirent2);
-				ps2mcfs_get_dirent(s, data, clus0, dirent2->dir_entry, &dirent);
+				ps2mcfs_climb(data, &dirent);
 			}
 			else if (strcmp(path, ".") != 0) {
-				uint32_t i;
-				for(i = 0; i < dirent->length; i++) {
-					struct dir_entry_t* dirent2;
-					ps2mcfs_get_dirent(s, data, clus0, i, &dirent2);
-					if (strncmp(dirent2->name, path, slash-path) == 0) {
+				int i;
+				for(i = 0; i < dirent.length; i++) {
+					struct dir_entry_t dirent2;
+					ps2mcfs_get_child(data, dirent.cluster, i, &dirent2);
+					if (strncmp(dirent2.name, path, slash-path) == 0) {
 						dirent = dirent2;
-						clus0 = dirent->cluster;
 						break;
 					}
 				}
-				if (i == dirent->length) {
+				if (i == dirent.length)
 					return -ENOENT;
-				}
 			}
 		}
 		if (*slash != 0) {
@@ -121,19 +154,17 @@ int ps2mcfs_browse (struct superblock_t* s, void* data, const char* path, uint32
 			if (slash == NULL) // slash not found, make slash point to the last null
 				slash = path + strlen(path);
 		}
-		else { // slash was already pointing to the last null char, quit
+		else { // slash was already pointing to the last null char, return
 			break;
 		}
 	}
-	if (destclus)
-		*destclus = clus0;
 	if (destdirent)
 		*destdirent = dirent;
 	return 0;
 }
 
-void ps2mcfs_stat(struct dir_entry_t* dirent, struct stat* stbuf) {
-	if (is_directory(dirent))
+void ps2mcfs_stat(const struct dir_entry_t* const dirent, struct stat* stbuf) {
+	if (ps2mcfs_is_directory(dirent))
 		stbuf->st_mode |= S_IFDIR;
 	else
 		stbuf->st_mode |= S_IFREG;
@@ -142,33 +173,92 @@ void ps2mcfs_stat(struct dir_entry_t* dirent, struct stat* stbuf) {
 	stbuf->st_blocks = 1;
 	stbuf->st_mtime = date_time_to_timestamp(&dirent->modification);
 	stbuf->st_ctime = date_time_to_timestamp(&dirent->creation);
+	// fat32 doesn't manage per-user permissions, copy rwx permissions
+	// across the 'user', 'group' and 'other' umasks
+	stbuf->st_mode += (dirent->mode & 7) * 0111;
 }
 
-int ps2mcfs_read(struct superblock_t* s, void* data,  uint32_t clus0, struct dir_entry_t* dirent, void* buf, size_t size, off_t offset)  {
+int ps2mcfs_read(const struct superblock_t* const s, void* data, struct dir_entry_t* dirent, void* buf, size_t size, off_t offset)  {
 	if (offset > dirent->length)
 		return 0;
 	if (offset + size > dirent->length)
 		size = dirent->length-offset;
 
-	uint32_t k = cluster_size(s);
-	size_t bytes = 0;
-	while (offset > k) {
-		uint32_t fat = get_fat_entry(s, data, clus0);
-		if (fat == 0xFFFFFFFF || fat < 0x80000000)
-			return 0; // unexpected end of file?
-		clus0 = fat - 0x80000000;
-		offset -= k;
-	}
-	memcpy(buf, data + relative_cluster_offset(s, clus0) + offset, MIN(size, k-offset));
-	bytes = MIN(size, k-offset);
+	size_t k = fat_cluster_size(data);
+	off_t x;
+	if(!fat_seek_bytes(data, dirent->cluster, offset, &x))
+		return 0; // shouldn't happen
+	memcpy(buf, relative_to_absolute(data, x), MIN(size, k-offset%k));
+	size_t bytes = MIN(size, k-offset%k);
+	cluster_t clus0 = x/k;
 	while (bytes < size) {
-		uint32_t fat = get_fat_entry(s, data, clus0);
-		if (fat == 0xFFFFFFFF || fat < 0x80000000)
+		clus0 = fat_seek(data, clus0, 1, SEEK_CUR);
+		if (clus0 == 0xFFFFFFFF)
 			break; // unexpected end of file?
-		clus0 = fat - 0x80000000;
-		memcpy(buf+bytes, data + relative_cluster_offset(s, clus0), MIN(size-bytes, k));
+		memcpy(buf+bytes, relative_to_absolute(data, clus0*k), MIN(size-bytes, k));
 		bytes += MIN(size-bytes, k);
 	}
 	return bytes;
 }
 
+int ps2mcfs_mkdir(const struct superblock_t* const s, void* data, struct dir_entry_t* parent, const char* name, uint16_t mode) {
+	size_t dirents_per_cluster = fat_cluster_size(data) / sizeof(struct dir_entry_t);
+	cluster_t last = fat_truncate(data, parent->cluster, parent->length/dirents_per_cluster);
+
+	struct dir_entry_t new_child;
+	new_child.mode = mode | 0x20;
+	new_child.length = 2;
+	date_time_now(&new_child.creation);
+	new_child.cluster = fat_find_free_cluster(data, 0);
+	fat_truncate(data, new_child.cluster, 2/dirents_per_cluster);
+	new_child.modification = new_child.creation;
+	new_child.attributes = 0;
+	strcpy(new_child.name, name);
+	ps2mcfs_set_child(data, last, parent->length % dirents_per_cluster, &new_child);
+
+	// make the '.' and '..' entries for the new child
+	struct dir_entry_t dummy;
+	// what else should i fill here?
+	dummy.cluster = parent->cluster;
+	dummy.dir_entry = parent->length;
+	dummy.mode = new_child.mode;
+	strcpy(dummy.name, ".");
+	ps2mcfs_set_child(data, new_child.cluster, 0, &dummy);
+	strcpy(dummy.name, "..");
+	ps2mcfs_set_child(data, new_child.cluster, 1, &dummy);
+
+	// update the parent
+	parent->length++;
+	// load the parent's '.' entry
+	ps2mcfs_get_child(data, parent->cluster, 0, &dummy);
+	ps2mcfs_set_child(data, dummy.cluster, dummy.dir_entry, parent);
+	return 0;
+}
+
+int ps2mcfs_write(const struct superblock_t* const s, void* data, struct dir_entry_t* dirent, void* buf, size_t size, off_t offset) {
+	size_t k = fat_cluster_size(data);
+	if (offset + size > dirent->length) {
+		size_t needed_clusters = div_ceil(offset+size, k);
+		cluster_t clusn = fat_truncate(data, dirent->cluster, needed_clusters);
+		if (clusn == 0xFFFFFFFF)
+			return -ENOSPC;
+		dirent->length = offset + size;
+	}
+
+	size_t bytes = 0;
+	off_t x;
+	if(!fat_seek_bytes(data, dirent->cluster, offset/k, &x))
+		return 0; // shouldn't happen
+	
+	memcpy(relative_to_absolute(data, x) + offset, buf, MIN(size, k-(offset%k)));
+	bytes = MIN(size, k-offset%k);
+	cluster_t clus0 = x/k;
+	while (bytes < size) {
+		clus0 = fat_seek(data, clus0, 1, SEEK_CUR);
+		if (clus0 == 0xFFFFFFFF)
+			break; // unexpected end of file?
+		memcpy(relative_to_absolute(data, clus0*k), buf+bytes, MIN(size-bytes, k));
+		bytes += MIN(size-bytes, k);
+	}
+	return bytes;
+}
