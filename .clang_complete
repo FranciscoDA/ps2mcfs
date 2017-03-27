@@ -1,0 +1,3 @@
+-I/usr/include/fuse3
+-Wall
+-ggdb

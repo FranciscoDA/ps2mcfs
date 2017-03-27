@@ -6,10 +6,13 @@ CFLAGS = $(shell pkg-config fuse3 --cflags) -Wall -ggdb
 LIBS = $(shell pkg-config fuse3 --libs)
 BIN = fuseps2mc
 
-all: $(BIN)
+all: completion $(BIN)
 
 %.o: %.c $(INCLUDES)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+completion:
+	echo $(CFLAGS) | tr " " "\n" > .clang_complete
 
 clean:
 	rm -f $(OBJS)
