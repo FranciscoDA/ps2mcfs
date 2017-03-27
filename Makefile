@@ -1,7 +1,7 @@
 
 OBJS = ps2mcfs.o fuseps2mc.o fat.o
 INCLUDES = ps2mcfs.h fat.h
-CC = gcc
+CC = clang
 CFLAGS = $(shell pkg-config fuse3 --cflags) -Wall -ggdb
 LIBS = $(shell pkg-config fuse3 --libs)
 BIN = fuseps2mc
