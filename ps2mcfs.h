@@ -58,7 +58,7 @@ bool ps2mcfs_is_directory(const struct dir_entry_t* const dirent);
 bool ps2mcfs_is_file(const struct dir_entry_t* const dirent);
 struct superblock_t* ps2mcfs_get_superblock(void* data, size_t size);
 
-int ps2mcfs_get_child(void* data, cluster_t parent, off_t entrynum, struct dir_entry_t* dest);
+int ps2mcfs_get_child(void* data, cluster_t parent, size_t entrynum, struct dir_entry_t* dest);
 int ps2mcfs_browse(const struct superblock_t* const s, void* data, const char* path, struct dir_entry_t* destdirent);
 
 void ps2mcfs_stat(const struct dir_entry_t* const dirent, struct stat* stbuf);

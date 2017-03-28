@@ -1,7 +1,10 @@
 
 #include <stdio.h>
+#include <string.h>
 
 #include "fat.h"
+
+#define MIN(a,b) ((a)<(b) ? (a) : (b))
 
 void fat_free(void* data, cluster_t clus, bool terminate) {
 	cluster_t fat_value = fat_get_table_entry(data, clus);
@@ -74,33 +77,71 @@ cluster_t fat_find_free_cluster(void* data, cluster_t clus) {
 
 
 cluster_t fat_truncate(void* data, cluster_t clus, size_t count) {
-	if (count == 0) { // we cannot delete a whole chain, so it's not possible to truncate to zero
-		return 0xFFFFFFFF; // return error in this case
+	if (count == 0) { // delete a whole chain
+		fat_free(data, clus, false);
+		return 0xFFFFFFFF;
 	}
 
 	// skip pre-allocated clusters
 	cluster_t fat_value = fat_get_table_entry(data, clus);
-	while (count > 1 && fat_value >= 0x80000000 && fat_value != 0xFFFFFFFF) {
+	while (count > 0 && fat_value >= 0x80000000 && fat_value != 0xFFFFFFFF) {
 		clus = fat_value - 0x80000000;
 		fat_value = fat_get_table_entry(data, clus);
 		--count;
 	}
 
-	if (count == 1) { // shrink the chain, terminate at clus
+	if (count == 0 && fat_value != 0xFFFFFFFF) { // shrink the chain, terminate at clus
 		fat_free(data, clus, true);
 		return clus;
 	}
-	return fat_expand(data, clus, count-1, true); // else expand by count-1
+	else if (count > 1 && fat_value == 0xFFFFFFFF) { // expand from clus if exit by fat_value
+		return fat_expand(data, clus, count-1, true);
+	}
+	// count equals 0 and fat_value is 0xFFFFFFFF
+	return clus; // leave as-is
 }
 
-bool fat_seek_bytes(void* data, cluster_t clus0, off_t offset, off_t* dest) {
+off_t fat_seek_bytes(void* data, cluster_t clus0, off_t offset) {
 	size_t k = fat_cluster_size(data);
 	while (offset >= k) {
 		clus0 = fat_seek(data, clus0, 1, SEEK_CUR);
 		if (clus0 == 0xFFFFFFFF)
-			return false;
+			return 0;
 		offset -= k;
 	}
-	*dest = clus0 * k + offset;
-	return true;
+	return fat_first_cluster_offset(data) + clus0 * k + offset;
 }
+
+size_t fat_rw_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf, bool write) {
+	size_t k = fat_cluster_size(data);
+	off_t fs_position = fat_seek_bytes(data, clus0, offset);
+	if (fs_position == 0)
+		return 0;
+	size_t buf_position = MIN(size, k-offset%k);
+	if (write)
+		memcpy(data+fs_position, buf, buf_position);
+	else
+		memcpy(buf, data+fs_position, buf_position);
+	while(buf_position < size) {
+		clus0 = fat_seek(data, clus0, 1, SEEK_CUR);
+		fs_position = fat_seek_bytes(data, clus0, 0);
+		if (clus0 == 0xFFFFFFFF)
+			return buf_position;
+		size_t s = MIN(size-buf_position, k);
+		if (write)
+			memcpy(data+fs_position, buf+buf_position, s);
+		else
+			memcpy(buf+buf_position, data+fs_position, s);
+
+		buf_position += s;
+	}
+	return buf_position;
+}
+
+size_t fat_read_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf) {
+	return fat_rw_bytes(data, clus0, offset, size, buf, false);
+}
+size_t fat_write_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf) {
+	return fat_rw_bytes(data, clus0, offset, size, buf, true);
+}
+

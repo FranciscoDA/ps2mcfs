@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <limits.h>
+#include <libgen.h>
 
 #define FUSE_USE_VERSION 30
 
@@ -49,19 +50,14 @@ static int do_getattr(const char* path, struct stat* stbuf, struct fuse_file_inf
 static int do_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags) {
 	struct dir_entry_t parent_dirent;
 	ps2mcfs_browse(vmc_superblock, vmc_raw_data, path, &parent_dirent);
-	printf("Reading directory: %s\nCluster: %d\nLength: %d\n",
-			parent_dirent.name, parent_dirent.cluster, parent_dirent.length);
 	for (int i = 0; i < parent_dirent.length; ++i) {
 		struct dir_entry_t dirent;
+		struct stat dirstat;
 		ps2mcfs_get_child(vmc_raw_data, parent_dirent.cluster, i, &dirent);
-		printf("=====LISTING %s========\n", dirent.name);
-		if (filler(buf, dirent.name, NULL, 0, 0) != 0)
-			break;
-		/*struct stat dirstat;
 		init_stat(&dirstat);
 		ps2mcfs_stat(&dirent, &dirstat);
 		if (filler(buf, dirent.name, &dirstat, 0, 0) != 0)
-			break;*/
+			break;
 	}
 	return 0;
 }
@@ -77,17 +73,17 @@ static int do_read(const char* path, char* buf, size_t size, off_t offset, struc
 }
 
 static int do_mkdir(const char* path, mode_t mode) {
-	const char* last_separator = strrchr(path, '/');
-	if (!last_separator)
-		return -EINVAL;
-	char* parent_path = malloc((last_separator-path+1) * sizeof(char));
-	strncpy(parent_path, path, last_separator-path);
-	parent_path[last_separator-path] = '\0';
+	char dir_name[PATH_MAX];
+	char base_name[NAME_MAX];
+	strcpy(dir_name, path);
+	strcpy(base_name, path);
 	struct dir_entry_t parent_dirent;
-	if (ps2mcfs_browse(vmc_superblock, vmc_raw_data, parent_path, &parent_dirent) != 0)
-		return -ENOENT;
-	//ps2mcfs_mkdir()
-	return 0;
+	int err = ps2mcfs_browse(vmc_superblock, vmc_raw_data, dirname(dir_name), &parent_dirent);
+	if (err)
+		return err;
+	// use the most permissive combination of umask
+	mode = ((mode & 0700) / 64) | ((mode & 0070) / 8) | (mode & 0007);
+	return ps2mcfs_mkdir(vmc_superblock, vmc_raw_data, &parent_dirent, basename(base_name), mode);
 }
 
 static struct fuse_operations operations = {

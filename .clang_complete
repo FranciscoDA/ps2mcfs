@@ -1,3 +1,4 @@
 -I/usr/include/fuse3
 -Wall
 -ggdb
+-std=gnu11

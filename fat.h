@@ -7,10 +7,11 @@ typedef uint32_t cluster_t;
 
 /***
  * These functions are defined at ps2mcfs.c
- * because they involve accessing the superblock
+ * because they involve accessing the superblock, etc
  **/
 size_t fat_cluster_size(void* data);
 cluster_t fat_max_cluster(void* data);
+off_t fat_first_cluster_offset(void* data);
 cluster_t fat_get_table_entry(void* data, cluster_t clus);
 void fat_set_table_entry(void* data, cluster_t clus, cluster_t newval);
 
@@ -48,8 +49,8 @@ cluster_t fat_truncate(void* data, cluster_t clus, size_t count);
 
 /***
  * seek in bytes from the start of the cluster.
- * Stores the resulting relative offset to the first allocatable cluster in bytes inside *dest
- * Returns true on success, false if the offset is beyond the size of the chain
+ * Returns the offset on success, 0 on error
  **/
-bool fat_seek_bytes(void* data, cluster_t clus0, off_t offset, off_t* dest);
-
+off_t fat_seek_bytes(void* data, cluster_t clus0, off_t offset);
+size_t fat_read_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf);
+size_t fat_write_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf);
