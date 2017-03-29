@@ -17,7 +17,7 @@
 
 static char vmc_file_path[PATH_MAX];
 static void* vmc_raw_data;
-static struct superblock_t* vmc_superblock = NULL;
+static superblock_t* vmc_superblock = NULL;
 
 static void* do_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
 	FILE* f = fopen(vmc_file_path, "rb");
@@ -37,39 +37,44 @@ void init_stat(struct stat* stbuf) {
 }
 
 static int do_getattr(const char* path, struct stat* stbuf, struct fuse_file_info* fi) {
-	struct dir_entry_t dirent;
-	int err = ps2mcfs_browse(vmc_superblock, vmc_raw_data, path, &dirent);
-	if (err < 0) {
+	browse_result_t result;
+	int err = ps2mcfs_browse(vmc_raw_data, NULL, path, &result);
+	if (err)
 		return err;
-	}
 	init_stat(stbuf);
-	ps2mcfs_stat(&dirent, stbuf);
+	ps2mcfs_stat(&result.dirent, stbuf);
 	return 0;
 }
 
+typedef struct {
+	void* buf;
+	fuse_fill_dir_t filler;
+} readdir_args;
+
+int readdir_cb(dir_entry_t* child, void* extra) {
+	readdir_args* args = (readdir_args*) extra;
+	struct stat dirstat;
+	init_stat(&dirstat);
+	ps2mcfs_stat(child, &dirstat);
+	return args->filler(args->buf, child->name, &dirstat, 0, 0);
+}
+
 static int do_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi, enum fuse_readdir_flags flags) {
-	struct dir_entry_t parent_dirent;
-	ps2mcfs_browse(vmc_superblock, vmc_raw_data, path, &parent_dirent);
-	for (int i = 0; i < parent_dirent.length; ++i) {
-		struct dir_entry_t dirent;
-		struct stat dirstat;
-		ps2mcfs_get_child(vmc_raw_data, parent_dirent.cluster, i, &dirent);
-		init_stat(&dirstat);
-		ps2mcfs_stat(&dirent, &dirstat);
-		if (filler(buf, dirent.name, &dirstat, 0, 0) != 0)
-			break;
-	}
+	browse_result_t parent;
+	ps2mcfs_browse(vmc_raw_data, NULL, path, &parent);
+	readdir_args extra = { .buf = buf, .filler = filler };
+	ps2mcfs_ls(vmc_raw_data, &parent.dirent, readdir_cb, &extra);
 	return 0;
 }
 
 static int do_open(const char* path, struct fuse_file_info* fi) {
-	return ps2mcfs_browse(vmc_superblock, vmc_raw_data, path, NULL);
+	return ps2mcfs_browse(vmc_raw_data, NULL, path, NULL);
 }
 
 static int do_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
-	struct dir_entry_t dirent;
-	ps2mcfs_browse(vmc_superblock, vmc_raw_data, path, &dirent);
-	return ps2mcfs_read(vmc_superblock, vmc_raw_data, &dirent, buf, size, offset);
+	browse_result_t result;
+	ps2mcfs_browse(vmc_raw_data, NULL, path, &result);
+	return ps2mcfs_read(vmc_superblock, vmc_raw_data, &result.dirent, buf, size, offset);
 }
 
 static int do_mkdir(const char* path, mode_t mode) {
@@ -77,13 +82,37 @@ static int do_mkdir(const char* path, mode_t mode) {
 	char base_name[NAME_MAX];
 	strcpy(dir_name, path);
 	strcpy(base_name, path);
-	struct dir_entry_t parent_dirent;
-	int err = ps2mcfs_browse(vmc_superblock, vmc_raw_data, dirname(dir_name), &parent_dirent);
+	browse_result_t parent;
+	int err = ps2mcfs_browse(vmc_raw_data, NULL, dirname(dir_name), &parent);
 	if (err)
 		return err;
 	// use the most permissive combination of umask
-	mode = ((mode & 0700) / 64) | ((mode & 0070) / 8) | (mode & 0007);
-	return ps2mcfs_mkdir(vmc_superblock, vmc_raw_data, &parent_dirent, basename(base_name), mode);
+	mode = ((mode/64)|(mode/8)|mode) & 0007;
+	return ps2mcfs_mkdir(vmc_raw_data, &parent.dirent, basename(base_name), mode);
+}
+
+static int do_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
+	char dir_name[PATH_MAX];
+	char base_name[NAME_MAX];
+	strcpy(dir_name, path);
+	strcpy(base_name, path);
+	browse_result_t parent;
+	int err = ps2mcfs_browse(vmc_raw_data, NULL, dirname(dir_name), &parent);
+	if (err)
+		return err;
+	mode = ((mode/64)|(mode/8)|mode) & 0007;
+	return ps2mcfs_create(vmc_raw_data, &parent.dirent, basename(base_name), mode);
+}
+
+static int do_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
+	browse_result_t result;
+	int err = ps2mcfs_browse(vmc_raw_data, NULL, path, &result);
+	if (err)
+		return err;
+	date_time_t modification;
+	ps2mcfs_time_to_date_time(tv[1].tv_sec, &modification);
+	ps2mcfs_utime(vmc_raw_data, &result, modification);
+	return 0;
 }
 
 static struct fuse_operations operations = {
@@ -92,7 +121,9 @@ static struct fuse_operations operations = {
 	.readdir = do_readdir,
 	.open = do_open,
 	.read = do_read,
-	.mkdir = do_mkdir
+	.mkdir = do_mkdir,
+	.create = do_create,
+	.utimens = do_utimens
 };
 
 void usage(char* arg0) {

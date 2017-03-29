@@ -17,15 +17,15 @@ void fat_set_table_entry(void* data, cluster_t clus, cluster_t newval);
 
 /***
  * Frees all the clusters starting at 'clus' until the terminator is found.
- * if (terminate) 'clus' is turned into a terminator instead
+ * if (terminate) 'clus' is turned into a terminator
+ * if (!terminate) 'clus' is freed completely
  **/
 void fat_free(void* data, cluster_t clus, bool terminate);
 /***
  * Expands the chain starting at 'clus' up to 'count' clusters
  * returns the last cluster or 0xFFFFFFFF if no free clusters are found.
- * if (terminate) the last cluster is turned into a terminator
  **/
-cluster_t fat_expand(void* data, cluster_t clus, size_t count, bool terminate);
+cluster_t fat_expand(void* data, cluster_t clus, size_t count);
 
 /***
  * Returns the cluster relative to clus0 according to whence:
@@ -48,9 +48,16 @@ cluster_t fat_find_free_cluster(void* data, cluster_t clus);
 cluster_t fat_truncate(void* data, cluster_t clus, size_t count);
 
 /***
+ * Creates a new chain spanning 'len' clusters
+ * returns the first cluster or 0xFFFFFFFF if not enough space
+ **/
+cluster_t fat_allocate(void* data, size_t len);
+
+/***
  * seek in bytes from the start of the cluster.
  * Returns the offset on success, 0 on error
  **/
 off_t fat_seek_bytes(void* data, cluster_t clus0, off_t offset);
 size_t fat_read_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf);
-size_t fat_write_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* buf);
+size_t fat_write_bytes(void* data, cluster_t clus0, off_t offset, size_t size, const void* buf);
+
