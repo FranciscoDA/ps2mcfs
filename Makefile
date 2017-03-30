@@ -12,11 +12,12 @@ CC =     clang
 CFLAGS = $(shell pkg-config fuse3 --cflags) -Wall -ggdb -std=gnu11
 LIBS =   $(shell pkg-config fuse3 --libs)
 
-.PHONY: clean .clang_complete all
+.PHONY: clean all
 
 all: .clang_complete $(BIN)
 
 $(OBJ_DIR)%.o: $(SRC_DIR)%.c $(INCLUDES)
+	mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c "$<" -o "$@"
 
 .clang_complete: Makefile
@@ -26,5 +27,6 @@ clean:
 	rm -f $(OBJS)
 
 $(BIN): $(OBJS)
+	mkdir -p $(BIN_DIR)
 	$(CC) $(OBJS) $(CFLAGS) $(LIBS) -o $(BIN)
 

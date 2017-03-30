@@ -24,7 +24,10 @@ cluster_t fat_expand(void* data, cluster_t clus, size_t count) {
 	cluster_t clus0 = fat_seek(data, clus, 0, SEEK_END);
 	clus = clus0;
 	while (count > 0) {
-		cluster_t new_clus = fat_find_free_cluster(data, clus);
+		// start search at clus+1, otherwise it may return
+		// the same cluster as being free because
+		// the new fat entry is not set
+		cluster_t new_clus = fat_find_free_cluster(data, clus+1);
 		if (new_clus == 0xFFFFFFFF) {
 			fat_free(data, clus0, true);
 			fat_set_table_entry(data, clus0, 0xFFFFFFFF);
@@ -105,26 +108,29 @@ cluster_t fat_truncate(void* data, cluster_t clus, size_t count) {
 		--count;
 	}
 
-	if (count == 0 && fat_value != 0xFFFFFFFF) { // shrink the chain, terminate at clus
+	if (count == 0 && fat_value != 0xFFFFFFFF) {
+		// shrink the chain, terminate at clus
 		fat_free(data, clus, true);
 		return clus;
 	}
-	else if (count > 1 && (fat_value == 0xFFFFFFFF || fat_value < 0x80000000)) { // expand from clus if exit by fat_value
+	else if (count > 1 && (fat_value == 0xFFFFFFFF || fat_value < 0x80000000)) {
+		// expand from clus if 'count' was bigger than the chain
 		return fat_expand(data, clus, count-1);
 	}
-	// count equals 0 and fat_value is 0xFFFFFFFF
-	return clus; // leave as-is
+	// 'count' equals to the length of the chain. leave as-is
+	return clus;
 }
 
 off_t fat_seek_bytes(void* data, cluster_t clus0, off_t offset) {
 	size_t k = fat_cluster_size(data);
-	while (offset >= k) {
+	/*while (offset >= k) {
 		clus0 = fat_seek(data, clus0, 1, SEEK_CUR);
 		if (clus0 == 0xFFFFFFFF)
 			return 0;
 		offset -= k;
-	}
-	return fat_first_cluster_offset(data) + clus0 * k + offset;
+	}*/
+	clus0 = fat_seek(data, clus0, offset/k, SEEK_CUR);
+	return fat_first_cluster_offset(data) + clus0 * k + offset % k;
 }
 
 /***
@@ -134,6 +140,8 @@ off_t fat_seek_bytes(void* data, cluster_t clus0, off_t offset) {
  * respective data copy operations
  */
 size_t fat_rw_bytes(void* data, cluster_t clus0, off_t offset, size_t size, void* restrict read_buf, const void* restrict write_buf) {
+	if (clus0 == 0xFFFFFFFF)
+		return 0;
 	size_t k = fat_cluster_size(data);
 	off_t fs_position = fat_seek_bytes(data, clus0, offset);
 	if (fs_position == 0)

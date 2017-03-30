@@ -74,7 +74,7 @@ static int do_open(const char* path, struct fuse_file_info* fi) {
 static int do_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi) {
 	browse_result_t result;
 	ps2mcfs_browse(vmc_raw_data, NULL, path, &result);
-	return ps2mcfs_read(vmc_superblock, vmc_raw_data, &result.dirent, buf, size, offset);
+	return ps2mcfs_read(vmc_raw_data, &result.dirent, buf, size, offset);
 }
 
 static int do_mkdir(const char* path, mode_t mode) {
@@ -115,6 +115,14 @@ static int do_utimens(const char* path, const struct timespec tv[2], struct fuse
 	return 0;
 }
 
+static int do_write(const char* path, const char* data, size_t size, off_t offset, struct fuse_file_info* fi) {
+	browse_result_t result;
+	int err = ps2mcfs_browse(vmc_raw_data, NULL, path, &result);
+	if (err)
+		return err;
+	return ps2mcfs_write(vmc_raw_data, &result, (const void*) data, size, offset);
+}
+
 static struct fuse_operations operations = {
 	.init = do_init,
 	.getattr = do_getattr,
@@ -123,7 +131,8 @@ static struct fuse_operations operations = {
 	.read = do_read,
 	.mkdir = do_mkdir,
 	.create = do_create,
-	.utimens = do_utimens
+	.utimens = do_utimens,
+	.write = do_write
 };
 
 void usage(char* arg0) {

@@ -76,10 +76,10 @@ int ps2mcfs_browse(void* data, dir_entry_t* root, const char* path, browse_resul
 dir_entry_t ps2mcfs_locate(void* data, browse_result_t* src);
 
 void ps2mcfs_stat(const dir_entry_t* const dirent, struct stat* stbuf);
-int ps2mcfs_read(const superblock_t* const s, void* data,  dir_entry_t* dirent, void* buf, size_t size, off_t offset);
+int ps2mcfs_read(void* data, const dir_entry_t* dirent, void* buf, size_t size, off_t offset);
 
 void ps2mcfs_utime(void* data, browse_result_t* dirent, date_time_t modification);
 int ps2mcfs_mkdir(void* data, dir_entry_t* parent, const char* name, uint16_t mode);
 int ps2mcfs_create(void* data, dir_entry_t* parent, const char* name, uint16_t mode);
-//int ps2mcfs_write(void* data, struct dir_entry_t* parent, struct dir_entry_t* dirent, void* buf, size_t size, off_t offset);
+int ps2mcfs_write(void* data, browse_result_t* dirent, const void* buf, size_t size, off_t offset);
 

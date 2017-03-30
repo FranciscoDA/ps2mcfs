@@ -195,7 +195,7 @@ void ps2mcfs_stat(const dir_entry_t* const dirent, struct stat* stbuf) {
 	stbuf->st_mode += (dirent->mode & 7) * 0111;
 }
 
-int ps2mcfs_read(const superblock_t* const s, void* data, dir_entry_t* dirent, void* buf, size_t size, off_t offset)  {
+int ps2mcfs_read(void* data, const dir_entry_t* dirent, void* buf, size_t size, off_t offset)  {
 	if (offset > dirent->length)
 		return 0;
 	if (offset + size > dirent->length)
@@ -261,7 +261,7 @@ int ps2mcfs_mkdir(void* data, dir_entry_t* parent, const char* name, uint16_t mo
 int ps2mcfs_create(void* data, dir_entry_t* parent, const char* name, uint16_t mode) {
 	dir_entry_t new_child;
 	new_child.mode = mode | DF_FILE;
-	new_child.length = 1;
+	new_child.length = 0;
 	ps2mcfs_time_to_date_time(time(NULL), &new_child.creation);
 	new_child.cluster = 0xFFFFFFFF; // create empty file
 	new_child.modification = new_child.creation;
@@ -274,19 +274,18 @@ int ps2mcfs_create(void* data, dir_entry_t* parent, const char* name, uint16_t m
 	return 0;
 }
 
-int ps2mcfs_write(void* data, dir_entry_t* parent, dir_entry_t* dirent, void* buf, size_t size, off_t offset) {
-	//const struct superblock_t* const s = (struct superblock_t*) data;
-	//size_t k = fat_cluster_size(data);
-	if (offset + size > dirent->length) {
-		return 0;
-		/*size_t needed_clusters = div_ceil(offset+size, k);
-		cluster_t clusn = fat_truncate(data, dirent->cluster, needed_clusters);
+int ps2mcfs_write(void* data, browse_result_t* dirent, const void* buf, size_t size, off_t offset) {
+	if (offset + size > dirent->dirent.length) {
+		if (dirent->dirent.cluster == 0xFFFFFFFF) {
+			dirent->dirent.cluster = fat_allocate(data, 1);
+		}
+		size_t k = fat_cluster_size(data);
+		size_t needed_clusters = div_ceil(offset+size, k);
+		cluster_t clusn = fat_truncate(data, dirent->dirent.cluster, needed_clusters);
 		if (clusn == 0xFFFFFFFF)
 			return -ENOSPC;
-		dirent->length = offset + size;
-		struct dir_entry_t dummy;
-		ps2mcfs_get_child(data, dirent->cluster, 0, &dummy);
-		ps2mcfs_set_child(data, dummy.cluster, dummy.dir_entry, dirent);*/
+		dirent->dirent.length = offset + size;
+		*((dir_entry_t*)(data+dirent->location)) = dirent->dirent;
 	}
-	return fat_write_bytes(data, dirent->cluster, offset, size, buf);
+	return fat_write_bytes(data, dirent->dirent.cluster, offset, size, buf);
 }
