@@ -1,10 +1,26 @@
 # ps2mcfs
-FUSE driver for PlayStation 2 Virtual Memory Card (VMC) images. This will allow you to mount Open PS2 Loader's VMC images in userspace.
+FUSE driver for PlayStation 2 Virtual Memory Card (VMC) images. This will allow you to mount VMC images from Open PS2 Loader or PCSX2 in userspace.
 
-Currently, only read operations are implemented (stat, readdir, read)
-Write operations like mkdir, create and utimens are also implemented but are not persistent (ie. changes are lost when the filesystem is unmounted)
+Implemented operations:
+ * read
+ * stat
+ * readdir
+ * mkdir
+ * utimens
+ * create
+ * write
 
-    Usage: ps2mcfs <memory-card-image> <mount-point> [FUSE options]
+The implemented operations allow basic read/write commands: mkdir, touch, cat, less, etc. However, writes are not persistent in the sense that changes are lost when the filesystem is unmounted. It's not yet possible to remove files or directories.
+
+Also, some filesystem status considerations:
+ * access times are missing (they're not supported by the filesystem specification). Files will show as being last accessed in Jan 1st of 1970
+ * user/group ownership is missing (not supported either). Files will appear as being owned by the same user and group that mounted the filesystem
+ * Per-file permissions are supported, but not umasks. Newly created files will appear as having the most permissive combination of permissions from the umask that FUSE provides
+ * The timezone for create/modify times for files is always GMT+9:00 (Japan time zone). This is not yet implemented but it is expected to cause issues with some programs. For example, vim will create swap files for a file, warn that the file is already being edited and will not delete the swap files after exit.
+
+```
+Usage: ps2mcfs <memory-card-image> <mount-point> [FUSE options]
+```
 
 See also:
 
