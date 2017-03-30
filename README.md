@@ -2,6 +2,7 @@
 FUSE driver for PlayStation 2 Virtual Memory Card (VMC) images. This will allow you to mount Open PS2 Loader's VMC images in userspace.
 
 Currently, only read operations are implemented (stat, readdir, read)
+Write operations like mkdir, create and utimens are also implemented but are not persistent (ie. changes are lost when the filesystem is unmounted)
 
     Usage: ps2mcfs <memory-card-image> <mount-point> [FUSE options]
 
