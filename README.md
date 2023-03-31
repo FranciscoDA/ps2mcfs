@@ -39,6 +39,6 @@ The executable is built with the makefile using `make`
 
 [PS2 Homebrew & emu scene](http://psx-scene.com/forums/ps2-homebrew-dev-emu-scene/)
 
-[PS2 NBD server plugin to access VMC files remotely](https://github.com/bignaux/lwNBD/blob/main/plugins/mcman/lwnbd-mcman-plugin.md)
+[PS2 NBD server plugin](https://github.com/bignaux/lwNBD/blob/main/plugins/mcman/lwnbd-mcman-plugin.md) allows accessing VMC files through your PS2
 
 [PS2iconsys](https://github.com/ticky/ps2iconsys) allows converting PS2 icons into their respective geometry and texture files and viceversa
