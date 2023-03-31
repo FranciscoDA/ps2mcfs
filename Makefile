@@ -8,7 +8,7 @@ BIN =      $(addprefix $(BIN_DIR), fuseps2mc)
 OBJS =     $(addprefix $(OBJ_DIR), ps2mcfs.o fat.o ecc.o main.o)
 INCLUDES = $(addprefix $(INC_DIR), ps2mcfs.h fat.h ecc.h vmc_types.h)
 
-CC =     clang
+CC =     cc
 CFLAGS = $(shell pkg-config fuse3 --cflags) -Wall -ggdb3 -O0 -std=gnu11 -D DEBUG=1
 LIBS =   $(shell pkg-config fuse3 --libs)
 
@@ -21,7 +21,7 @@ $(OBJ_DIR)%.o: $(SRC_DIR)%.c $(INCLUDES) Makefile
 	$(CC) $(CFLAGS) -c "$<" -o "$@"
 
 .clang_complete: Makefile
-	tr " " "\n" <<<"$(CFLAGS)" > $@
+	echo "$(CFLAGS)" | tr " " "\n" > $@
 
 clean:
 	rm -f $(OBJS)
