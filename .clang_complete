@@ -1,4 +1,8 @@
 -I/usr/include/fuse3
+
 -Wall
--ggdb
+-ggdb3
+-O0
 -std=gnu11
+-D
+DEBUG=1

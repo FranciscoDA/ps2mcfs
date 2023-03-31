@@ -22,10 +22,23 @@ Also, some filesystem status considerations:
 Usage: ps2mcfs <memory-card-image> <mount-point> [FUSE options]
 ```
 
-See also:
+### Building
+
+The following packages are needed to build the project in Ubuntu:
+* libfuse3-dev
+* pkgconf
+* clang-tools
+
+The executable is built with the makefile using `make`
+
+### See also
 
 [PlayStation 2 Memory Card File System](http://www.csclub.uwaterloo.ca:11068/mymc/ps2mcfs.html)
 
 [Open PS2 Loader](https://bitbucket.org/ifcaro/open-ps2-loader/wiki/Home)
 
 [PS2 Homebrew & emu scene](http://psx-scene.com/forums/ps2-homebrew-dev-emu-scene/)
+
+[PS2 NBD server plugin](https://github.com/bignaux/lwNBD/blob/main/plugins/mcman/lwnbd-mcman-plugin.md) allows accessing VMC files through your PS2
+
+[PS2iconsys](https://github.com/ticky/ps2iconsys) allows converting PS2 icons into their respective geometry and texture files and viceversa
