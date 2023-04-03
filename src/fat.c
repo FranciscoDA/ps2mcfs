@@ -8,12 +8,6 @@
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 
-#ifdef DEBUG
-#define DEBUG_printf(...) printf(__VA_ARGS__)
-#else
-#define DEBUG_printf(...)
-#endif
-
 /* Data about the card geometry */
 
 size_t fat_page_size(const vmc_meta_t* vmc_meta)        { return vmc_meta->superblock->page_size + vmc_meta->page_spare_area_size; }
@@ -158,7 +152,7 @@ cluster_t fat_truncate(const vmc_meta_t* vmc_meta, cluster_t clus, size_t trunca
  * If either read_buf or write_buf are NULL, skip their respective data copy operations
  */
 size_t fat_rw_bytes(const vmc_meta_t* vmc_meta, cluster_t clus, logical_offset_t offset, size_t buf_size, void* restrict read_buf, const void* restrict write_buf) {
-	if (clus == 0xFFFFFFFF)
+	if (clus == CLUSTER_INVALID)
 		return 0;
 	const size_t k_capacity = fat_cluster_capacity(vmc_meta);
 	const size_t p_capacity = fat_page_capacity(vmc_meta);
@@ -183,16 +177,21 @@ size_t fat_rw_bytes(const vmc_meta_t* vmc_meta, cluster_t clus, logical_offset_t
 
 		if (read_buf) {
 			memcpy(read_buf + buf_offset, vmc_meta->raw_data + mc_offset, s);
-			bool ecc_ok = ecc512_check(vmc_meta->raw_data + spare_start, vmc_meta->raw_data + page_start);
-			if (!ecc_ok) {
-				DEBUG_printf("ECC mismatch at offset 0x%x (ECC data at: 0x%x)\n", page_start, spare_start);
-			}
-			else {
-				DEBUG_printf("Success reading %lu bytes of data from 0x%x\n", s, mc_offset);
+			if (vmc_meta->ecc_bytes == 12) {
+				bool ecc_ok = ecc512_check(vmc_meta->raw_data + spare_start, vmc_meta->raw_data + page_start);
+				if (!ecc_ok) {
+					DEBUG_printf("ECC mismatch at offset 0x%x (ECC data at: 0x%x)\n", page_start, spare_start);
+				}
+				else {
+					DEBUG_printf("Success reading %lu bytes of data from 0x%x\n", s, mc_offset);
+				}
 			}
 		}
 		if (write_buf) {
 			memcpy(vmc_meta->raw_data + mc_offset, write_buf + buf_offset, s);
+			if (vmc_meta->ecc_bytes == 12) {
+				ecc512_calculate(vmc_meta->raw_data + spare_start, vmc_meta->raw_data + page_start);
+			}
 		}
 		buf_offset += s;
 		offset += s;
