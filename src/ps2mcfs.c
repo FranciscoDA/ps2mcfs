@@ -100,21 +100,12 @@ int ps2mcfs_get_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int 
 }
 
 int ps2mcfs_set_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* src) {
-	size_t sz = fat_write_bytes(vmc_meta, clus0, entrynum*sizeof(dir_entry_t), sizeof(dir_entry_t), src);
+	DEBUG_printf("Updating directory entry at index %u starting from cluster %u to: \"%s\" (cluster: %u, size: %u)\n", entrynum, clus0, src->name, src->cluster, src->length);
+	size_t sz = fat_write_bytes(vmc_meta, clus0, entrynum * sizeof(dir_entry_t), sizeof(dir_entry_t), src);
 	if(sz != sizeof(dir_entry_t))
 		return -ENOENT;
 	return 0;
 }
-
-/**
- * climb up one node from the 'dirent' directory and store the result in place
- */
-void ps2mcfs_climb(const vmc_meta_t* vmc_meta, dir_entry_t* dirent) {
-	ps2mcfs_get_child(vmc_meta, dirent->cluster, 0, dirent); // dirent's '.' entry
-	ps2mcfs_get_child(vmc_meta, dirent->cluster, 0, dirent); // get parent '.' entry
-	ps2mcfs_get_child(vmc_meta, dirent->cluster, dirent->dir_entry, dirent); // get parent entry from grandparent
-}
-
 
 void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_entry_t* child, void* extra), void* extra) {
 	size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta) / sizeof(dir_entry_t);
@@ -126,8 +117,9 @@ void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_e
 		}
 		dir_entry_t child;
 		ps2mcfs_get_child(vmc_meta, clus, i % dirents_per_cluster, &child);
-		if (cb(&child, extra) != 0)
-			break;
+		if (child.mode & DF_EXISTS)
+			if (cb(&child, extra) != 0)
+				break;
 	}
 }
 
@@ -157,24 +149,27 @@ int ps2mcfs_browse(const vmc_meta_t* vmc_meta, dir_entry_t* root, const char* pa
 	}
 
 	cluster_t clus = dirent.cluster;
-	size_t dirent_number;
+	size_t dirent_index = 0;
 
 	if (slash != path) {
 		if (!ps2mcfs_is_directory(&dirent))
 			return -ENOTDIR;
 		else if (slash-path >= 32)
 			return -ENAMETOOLONG;
-		else if (slash-path == 2 && strncmp(path, "..", 2) == 0)
-			ps2mcfs_climb(vmc_meta, &dirent);
+		else if (slash-path == 2 && strncmp(path, "..", 2) == 0) {
+			ps2mcfs_get_child(vmc_meta, dirent.cluster, 0, &dirent); // dirent's '.' entry
+			ps2mcfs_get_child(vmc_meta, dirent.cluster, 0, &dirent); // get parent '.' entry
+			ps2mcfs_get_child(vmc_meta, dirent.cluster, dirent.dir_entry, &dirent); // get parent entry from grandparent
+		}
 		else if (strcmp(path, ".") != 0) {
-			for (dirent_number = 0; dirent_number < root->length; dirent_number++) {
-				if (dirent_number % dirents_per_cluster == 0 && dirent_number != 0)
+			for (dirent_index = 0; dirent_index < root->length; dirent_index++) {
+				if (dirent_index % dirents_per_cluster == 0 && dirent_index != 0)
 					clus = fat_seek(vmc_meta, clus, 1);
-				ps2mcfs_get_child(vmc_meta, clus, dirent_number % dirents_per_cluster, &dirent);
+				ps2mcfs_get_child(vmc_meta, clus, dirent_index % dirents_per_cluster, &dirent);
 				if (strncmp(dirent.name, path, slash-path) == 0)
 					break;
 			}
-			if (dirent_number == root->length)
+			if (dirent_index == root->length)
 				return -ENOENT;
 		}
 	}
@@ -182,7 +177,7 @@ int ps2mcfs_browse(const vmc_meta_t* vmc_meta, dir_entry_t* root, const char* pa
 		if (dest) {
 			dest->dirent = dirent;
 			dest->parent = *root;
-			dest->location = fat_logical_to_physical_offset(vmc_meta, clus, (dirent_number % dirents_per_cluster) * sizeof(dir_entry_t));
+			dest->index = dirent_index;
 		}
 		return 0;
 	}
@@ -213,12 +208,14 @@ int ps2mcfs_read(const vmc_meta_t* vmc_meta, const dir_entry_t* dirent, void* bu
 }
 
 int ps2mcfs_add_child(const vmc_meta_t* vmc_meta, dir_entry_t* parent, dir_entry_t* new_child) {
-	size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta) / sizeof(dir_entry_t);
-	cluster_t last = fat_truncate(vmc_meta, parent->cluster, div_ceil(parent->length + 1, dirents_per_cluster));
+	DEBUG_printf("Adding new child \"%s/%s\"\n", parent->name, new_child->name);
+	const size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta) / sizeof(dir_entry_t);
+	const size_t new_size = div_ceil(parent->length + 1, dirents_per_cluster);
+	cluster_t last = fat_truncate(vmc_meta, parent->cluster, new_size);
 	if (last == CLUSTER_INVALID)
 		return -ENOSPC;
 
-	ps2mcfs_set_child(vmc_meta, last, parent->length % dirents_per_cluster, new_child);
+	ps2mcfs_set_child(vmc_meta, parent->cluster, parent->length, new_child);
 	dir_entry_t dummy;
 	parent->length++;
 	// now need to write the updated parent length into the parent's dir entry
@@ -230,13 +227,13 @@ int ps2mcfs_add_child(const vmc_meta_t* vmc_meta, dir_entry_t* parent, dir_entry
 void ps2mcfs_utime(const vmc_meta_t* vmc_meta, browse_result_t* dirent, date_time_t modification) {
 	dirent->dirent.modification = modification;
 	dirent->dirent.creation = modification; // probably not ok
-	*((dir_entry_t*)(vmc_meta->raw_data + dirent->location)) = dirent->dirent;
+	ps2mcfs_set_child(vmc_meta, dirent->parent.cluster, dirent->index, &dirent->dirent);
 }
 
 int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, uint16_t mode) {
 	size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta)/sizeof(dir_entry_t);
 	dir_entry_t new_child;
-	new_child.mode = mode | DF_DIRECTORY;
+	new_child.mode = mode | DF_DIRECTORY | DF_EXISTS;
 	new_child.length = 2;
 	ps2mcfs_time_to_date_time(time(NULL), &new_child.creation);
 	new_child.cluster = fat_allocate(vmc_meta, div_ceil(2, dirents_per_cluster));
@@ -256,7 +253,7 @@ int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* n
 
 	// make the '.' and '..' entries for the new child
 	dir_entry_t dummy;
-	// what else should be filled here?
+	// TODO: what else should be filled here?
 	dummy.cluster = parent->cluster;
 	dummy.dir_entry = parent->length-1;
 	dummy.mode = new_child.mode;
@@ -269,8 +266,9 @@ int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* n
 }
 
 int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, uint16_t mode) {
+	DEBUG_printf("Creating new empty file %s/%s\n", parent->name, name);
 	dir_entry_t new_child;
-	new_child.mode = mode | DF_FILE;
+	new_child.mode = mode | DF_FILE | DF_EXISTS;
 	new_child.length = 0;
 	ps2mcfs_time_to_date_time(time(NULL), &new_child.creation);
 	new_child.cluster = CLUSTER_INVALID; // create empty file
@@ -284,18 +282,66 @@ int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* 
 	return 0;
 }
 
-int ps2mcfs_write(const vmc_meta_t* vmc_meta, browse_result_t* dirent, const void* buf, size_t size, off_t offset) {
+int ps2mcfs_write(const vmc_meta_t* vmc_meta, const browse_result_t* dirent, const void* buf, size_t size, off_t offset) {
 	if (offset + size > dirent->dirent.length) {
-		if (dirent->dirent.cluster == CLUSTER_INVALID) {
-			dirent->dirent.cluster = fat_allocate(vmc_meta, 1);
+		dir_entry_t new_entry = dirent->dirent;
+		if (new_entry.cluster == CLUSTER_INVALID) {
+			new_entry.cluster = fat_allocate(vmc_meta, 1);
 		}
 		size_t k = fat_cluster_capacity(vmc_meta);
 		size_t needed_clusters = div_ceil(offset+size, k);
-		cluster_t clusn = fat_truncate(vmc_meta, dirent->dirent.cluster, needed_clusters);
+		cluster_t clusn = fat_truncate(vmc_meta, new_entry.cluster, needed_clusters);
 		if (clusn == CLUSTER_INVALID)
 			return -ENOSPC;
-		dirent->dirent.length = offset + size;
-		*((dir_entry_t*)(vmc_meta->raw_data + dirent->location)) = dirent->dirent;
+		new_entry.length = offset + size;
+		ps2mcfs_set_child(vmc_meta, dirent->parent.cluster, dirent->index, &new_entry);
+		return fat_write_bytes(vmc_meta, new_entry.cluster, offset, size, buf);
 	}
 	return fat_write_bytes(vmc_meta, dirent->dirent.cluster, offset, size, buf);
+}
+
+int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, const dir_entry_t parent, size_t index_in_parent) {
+	DEBUG_printf("Unlinking file %s/%s index %lu/%u\n", parent.name, unlinked_file.name, index_in_parent, parent.length - 1);
+	// free all the clusters in the deleted file (if it's not empty)
+	if (unlinked_file.cluster != CLUSTER_INVALID)
+		fat_truncate(vmc_meta, unlinked_file.cluster, 0);
+
+	dir_entry_t temp;
+	// remove the dirent in the parents list of dirents by shifting the siblings
+	for (int i = index_in_parent; i < parent.length - 1; ++i) {
+		ps2mcfs_get_child(vmc_meta, parent.cluster, i + 1, &temp);
+		ps2mcfs_set_child(vmc_meta, parent.cluster, i, &temp);
+		// the reverse link subdirectory entry (".") also has to be updated in each shifted sibling
+		// to reflect its new position in the parent's list of entries
+		cluster_t cluster = temp.cluster;
+		ps2mcfs_get_child(vmc_meta, cluster, 0, &temp);
+		temp.dir_entry = i;
+		ps2mcfs_set_child(vmc_meta, cluster, 0, &temp);
+	}
+
+	// we now need to decrement the length of the parent dir entry
+	// and update that inside its parent
+	ps2mcfs_get_child(vmc_meta, parent.cluster, 0, &temp); // dirent's '.' entry
+	cluster_t parent_parent_cluster = temp.cluster; // get the cluster of `parent` parent
+	size_t parent_index_in_parent = temp.dir_entry; // get index of `parent` direntry in its parent directory
+	temp = parent;
+	--temp.length;
+	ps2mcfs_set_child(vmc_meta, parent_parent_cluster, parent_index_in_parent, &temp);
+	return 0;
+}
+
+int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent) {
+	// NOTE: The following is not necessary as FUSE3 calls unlink() for each file before calling rmdir
+	// start at index=2 (skip `.` and `..` dummy entries)
+	/*for (int i = 2; i < removed_dir.length; ++i) {
+		// get and free all the clusters
+		dir_entry_t child;
+		ps2mcfs_get_child(vmc_meta, removed_dir.cluster, i, &child);
+		if (child.mode & DF_DIRECTORY) {
+			ps2mcfs_rmdir(vmc_meta, removed_dir, child, i);
+		}
+		fat_truncate(vmc_meta, child.cluster, 0);
+	}*/
+
+	return ps2mcfs_unlink(vmc_meta, removed_dir, parent, index_in_parent);
 }

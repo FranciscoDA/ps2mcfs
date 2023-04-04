@@ -39,10 +39,10 @@ typedef struct {
 typedef struct {
 	uint16_t mode;
 	uint16_t _unused0;
-	uint32_t length;
+	uint32_t length;    // Length in bytes if a file, or entries if a directory. 
 	date_time_t creation;
-	cluster_t cluster;
-	uint32_t dir_entry;
+	cluster_t cluster;  // First cluster of the file, or 0xFFFFFFFF for an empty file. In "." entries this the first cluster of this directory's parent directory instead
+	uint32_t dir_entry; // Only in "." entries. Entry of this directory in its parent's directory. 
 	date_time_t modification;
 	uint32_t attributes;
 	char _unused1[28];
@@ -53,7 +53,7 @@ typedef struct {
 typedef struct {
 	dir_entry_t dirent;
 	dir_entry_t parent; // parent dirent
-	physical_offset_t location; // absolute offset
+	size_t index;
 } browse_result_t;
 
 enum card_flags {

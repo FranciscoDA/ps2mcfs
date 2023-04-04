@@ -1,7 +1,7 @@
 # ps2mcfs
 FUSE driver for PlayStation 2 Virtual Memory Card (VMC) images. This will allow you to mount VMC images from Open PS2 Loader or PCSX2 in userspace.
 
-Implemented operations:
+Implemented filesystem operations:
  * read
  * stat
  * readdir
@@ -9,8 +9,10 @@ Implemented operations:
  * utimens
  * create
  * write
+ * rmdir
+ * unlink
 
-The implemented operations allow basic read/write commands: mkdir, touch, cat, less, etc. However, writes are not persistent in the sense that changes are lost when the filesystem is unmounted. It's not yet possible to remove files or directories.
+The implemented operations allow basic read/write commands: mkdir, touch, cat, less, rm, etc. However, writes are not persistent in the sense that changes are lost when the filesystem is unmounted.
 
 Also, some filesystem status considerations:
  * access times are missing (they're not supported by the filesystem specification). Files will show as being last accessed in Jan 1st of 1970

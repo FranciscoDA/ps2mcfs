@@ -53,5 +53,9 @@ int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* 
 /**
  * Writes data into the file referenced by the directory entry
 */
-int ps2mcfs_write(const vmc_meta_t* vmc_meta, browse_result_t* dirent, const void* buf, size_t size, off_t offset);
+int ps2mcfs_write(const vmc_meta_t* vmc_meta, const browse_result_t* dirent, const void* buf, size_t size, off_t offset);
 
+
+int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, const dir_entry_t parent, size_t index_in_parent);
+
+int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent);

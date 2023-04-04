@@ -129,6 +129,22 @@ static int do_write(const char* path, const char* data, size_t size, off_t offse
 	return ps2mcfs_write(&vmc_metadata, &result, (const void*) data, size, offset);
 }
 
+static int do_unlink(const char* path) {
+	browse_result_t result;
+	int err = ps2mcfs_browse(&vmc_metadata, NULL, path, &result);
+	if (err)
+		return err;
+	return ps2mcfs_unlink(&vmc_metadata, result.dirent, result.parent, result.index);
+}
+
+static int do_rmdir(const char* path) {
+	browse_result_t result;
+	int err = ps2mcfs_browse(&vmc_metadata, NULL, path, &result);
+	if (err)
+		return err;
+	return ps2mcfs_rmdir(&vmc_metadata, result.dirent, result.parent, result.index);
+}
+
 static struct fuse_operations operations = {
 	.init = do_init,
 	.getattr = do_getattr,
@@ -138,7 +154,9 @@ static struct fuse_operations operations = {
 	.mkdir = do_mkdir,
 	.create = do_create,
 	.utimens = do_utimens,
-	.write = do_write
+	.write = do_write,
+	.unlink = do_unlink,
+	.rmdir = do_rmdir
 };
 
 void usage(char* arg0) {

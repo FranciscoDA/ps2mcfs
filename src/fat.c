@@ -87,18 +87,17 @@ cluster_t fat_seek_last_cluster(const vmc_meta_t* vmc_meta, cluster_t cluster) {
 
 cluster_t fat_find_free_cluster(const vmc_meta_t* vmc_meta, cluster_t clus) {
 	for (uint32_t i = 0; i < vmc_meta->superblock->last_allocatable; ++i) {
-		fat_entry_t fat_value = fat_get_table_entry(vmc_meta, (clus+i) % vmc_meta->superblock->last_allocatable);
-		if (fat_value.entry.occupied)
-			return (clus+i) % vmc_meta->superblock->last_allocatable;
+		cluster_t current_cluster = (clus+i) % vmc_meta->superblock->last_allocatable;
+		fat_entry_t fat_value = fat_get_table_entry(vmc_meta, current_cluster);
+		if (fat_value.entry.occupied == 0)
+			return current_cluster;
 	}
 	return CLUSTER_INVALID;
 }
 
 cluster_t fat_truncate(const vmc_meta_t* vmc_meta, cluster_t clus, size_t truncated_length) {
 	fat_entry_t fat_value = fat_get_table_entry(vmc_meta, clus);
-	while (truncated_length > 1 && fat_value.entry.occupied) {
-		if (fat_value.raw == FAT_ENTRY_TERMINATOR.raw)
-			break;
+	while (truncated_length > 1 && fat_value.entry.occupied && fat_value.raw != FAT_ENTRY_TERMINATOR.raw) {
 		clus = fat_value.entry.next_cluster;
 		fat_value = fat_get_table_entry(vmc_meta, clus);
 		--truncated_length;
@@ -181,9 +180,6 @@ size_t fat_rw_bytes(const vmc_meta_t* vmc_meta, cluster_t clus, logical_offset_t
 				bool ecc_ok = ecc512_check(vmc_meta->raw_data + spare_start, vmc_meta->raw_data + page_start);
 				if (!ecc_ok) {
 					DEBUG_printf("ECC mismatch at offset 0x%x (ECC data at: 0x%x)\n", page_start, spare_start);
-				}
-				else {
-					DEBUG_printf("Success reading %lu bytes of data from 0x%x\n", s, mc_offset);
 				}
 			}
 		}
