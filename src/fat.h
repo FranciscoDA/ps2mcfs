@@ -48,8 +48,9 @@ cluster_t fat_seek(const vmc_meta_t* vmc_meta, cluster_t clus0, size_t count);
 cluster_t fat_find_free_cluster(const vmc_meta_t* vmc_meta, cluster_t clus);
 
 /**
- * Makes the linked list span `count` clusters. Frees old clusters or allocates new ones if needed.
+ * Makes the linked list that starts at `clus` span `count` clusters. Frees old clusters or allocates new ones if needed.
  * Returns the last cluster or CLUSTER_INVALID if ran out of space while extending the list.
+ * NOTE: the cluster chain should not start at CLUSTER_INVALID to avoid a segmentation fault
  **/
 cluster_t fat_truncate(const vmc_meta_t* vmc_meta, cluster_t clus, size_t count);
 
