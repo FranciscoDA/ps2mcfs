@@ -88,4 +88,10 @@ typedef struct {
 	uint8_t ecc_bytes;
 } vmc_meta_t;
 
+#ifdef DEBUG
+#define DEBUG_printf(...) printf(__VA_ARGS__)
+#else
+#define DEBUG_printf(...)
+#endif
+
 #endif
