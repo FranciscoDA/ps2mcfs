@@ -117,9 +117,14 @@ void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_e
 		}
 		dir_entry_t child;
 		ps2mcfs_get_child(vmc_meta, clus, i % dirents_per_cluster, &child);
-		if (child.mode & DF_EXISTS)
+		
+		if (child.mode & DF_EXISTS) {
 			if (cb(&child, extra) != 0)
 				break;
+		}
+		else {
+			DEBUG_printf("Skipping directory entry \"%s/%s\" (mode: %u, cluster: %u)\n", parent->name, child.name, child.mode, child.cluster);
+		}
 	}
 }
 
@@ -166,7 +171,7 @@ int ps2mcfs_browse(const vmc_meta_t* vmc_meta, dir_entry_t* root, const char* pa
 				if (dirent_index % dirents_per_cluster == 0 && dirent_index != 0)
 					clus = fat_seek(vmc_meta, clus, 1);
 				ps2mcfs_get_child(vmc_meta, clus, dirent_index % dirents_per_cluster, &dirent);
-				if (strncmp(dirent.name, path, slash-path) == 0)
+				if ((dirent.mode & DF_EXISTS) && strncmp(dirent.name, path, slash-path) == 0)
 					break;
 			}
 			if (dirent_index == root->length)
