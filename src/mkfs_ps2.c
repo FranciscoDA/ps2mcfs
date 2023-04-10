@@ -22,7 +22,17 @@ static const struct option CLI_OPTIONS[] = {
 };
 
 void usage(FILE* stream, const char* program_name, int exit_code) {
-    fprintf(stream, "Usage: %s -o OUTPUT_FILE [-s SIZE] [-e] [-h]\n", program_name);
+    fprintf(
+        stream,
+        "Usage: %s -o OUTPUT_FILE [-s SIZE] [-e] [-h]\n"
+        "Create a virtual memory card image file.\n"
+        "\n"
+        "  -s, --size=NUM   \tSet the memory card size in megabytes (options: 8)\n"
+        "  -e, --ecc        \tAdd ECC bytes to the generated file\n"
+        "  -o, --output=FILE\tSet the output file\n"
+        "  -h, --help       \tShow this help\n",
+        program_name
+    );
     exit(exit_code);
 }
 
