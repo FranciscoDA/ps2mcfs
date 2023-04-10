@@ -2,6 +2,7 @@
 #define _VMC_TYPES_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 
 typedef uint32_t cluster_t; // cluster index
@@ -62,6 +63,18 @@ enum card_flags {
     CF_ERASE_ZEROES = 0x10, // Erased blocks have all bits set to zero.
 };
 
+enum directory_flags {
+	DF_READ = 0x0001, // Read permission
+	DF_WRITE = 0x0002, // Write permission
+	DF_EXECUTE = 0x0004, // Execute permission (unused)
+	DF_PROTECTED = 0x0008, // Directory is copy protected (Meaningful only to the browser)
+	DF_FILE = 0x0010, // Regular file
+	DF_DIRECTORY = 0x0020, // Directory
+	DF_0400 = 0x0400, // Set when files and directories are created, otherwise ignored
+	DF_EXISTS = 0x8000,
+	DF_HIDDEN = 0x2000
+};
+
 typedef struct {
 	char      magic[40]; // "Sony PS2 Memory Card Format "
 	uint16_t  page_size;
@@ -81,17 +94,32 @@ typedef struct {
     uint8_t   card_flags; // Physical characteristics of the memory card. Allowed flags: CF_USE_ECC, CF_BAD_BLOCK, CF_ERASE_ZEROES
 } superblock_t;
 
+static const superblock_t DEFAULT_SUPERBLOCK = {
+	.magic = "Sony PS2 Memory Card Format 1.2.0.0\0\0\0\0",
+	.page_size = 512,
+	.pages_per_cluster = 2,
+	.pages_per_block = 16,
+	._unused0 = 0xFF00,
+	.clusters_per_card = 8192, // adjust per card size
+	.first_allocatable = 41,
+	.last_allocatable = 8135,
+	.root_cluster = 0,
+	.backup_block1 = 1023,
+	.backup_block2 = 1022,
+	._unused1 = "\0\0\0\0\0\0\0\0", // 8 bytes
+	// 32 items (only 1 indirect fat index)
+	.indirect_fat_clusters = {8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0, 0,},
+	// 32 items (no bad blocks)
+	.bad_block_list = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,-1, -1, -1, -1, -1, -1, -1, -1,},
+	.type = 2,
+	.card_flags = 0x2a // ecc disabled
+};
+
 typedef struct {
 	superblock_t* superblock;
 	void* raw_data;
 	size_t page_spare_area_size;
 	uint8_t ecc_bytes;
 } vmc_meta_t;
-
-#ifdef DEBUG
-#define DEBUG_printf(...) printf(__VA_ARGS__)
-#else
-#define DEBUG_printf(...)
-#endif
 
 #endif

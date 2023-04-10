@@ -4,17 +4,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <sys/param.h>
 
 #include "vmc_types.h"
 #include "fat.h"
 #include "ps2mcfs.h"
+#include "utils.h"
 
-#define div_ceil(x, y) ((x)/(y) + ((x)%(y) != 0))
 
 bool ps2mcfs_is_directory(const dir_entry_t* const dirent) {
 	return dirent->mode & DF_DIRECTORY;
@@ -48,11 +46,10 @@ int ps2mcfs_get_superblock(vmc_meta_t* metadata_out, void* raw_data, size_t size
 		return -1;
 	}
 	superblock_t* s = (superblock_t*) raw_data;
-	char magic[] = "Sony PS2 Memory Card Format 1.2.0.0";
-	if (strncmp(s->magic, magic, sizeof(magic)) != 0) {
+	if (strncmp(s->magic, DEFAULT_SUPERBLOCK.magic, sizeof(DEFAULT_SUPERBLOCK.magic)) != 0) {
 		printf(
 			"Magic string mismatch. Make sure the memory card was properly formatted."
-			"Expected: \"%s\". Read: \"%.*s\"\n", magic, (int)(sizeof(magic) - 1), s->magic
+			"Expected: \"%s\". Read: \"%.*s\"\n", DEFAULT_SUPERBLOCK.magic, (int)(sizeof(DEFAULT_SUPERBLOCK.magic) - 1), s->magic
 		);
 		return -1;
 	}
@@ -89,6 +86,7 @@ int ps2mcfs_get_superblock(vmc_meta_t* metadata_out, void* raw_data, size_t size
 	}
 	metadata_out->superblock = s;
 	metadata_out->raw_data = raw_data;
+	printf("Mounted card flags: %x\n", metadata_out->superblock->card_flags);
 	return 0;
 }
 
@@ -123,7 +121,7 @@ void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_e
 				break;
 		}
 		else {
-			DEBUG_printf("Skipping directory entry \"%s/%s\" (mode: %u, cluster: %u)\n", parent->name, child.name, child.mode, child.cluster);
+			DEBUG_printf("Skipping deleted directory entry \"%s/%s\" (mode: %u, cluster: %u)\n", parent->name, child.name, child.mode, child.cluster);
 		}
 	}
 }

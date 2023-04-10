@@ -20,8 +20,22 @@ Also, some filesystem status considerations:
  * Per-file permissions are supported, but not umasks. Newly created files will appear as having the most permissive combination of permissions from the umask that FUSE provides
  * The timezone for create/modify times for files is always GMT+9:00 (Japan time zone). This is not yet implemented but it is expected to cause issues with some programs. For example, vim will create swap files for a file, warn that the file is already being edited and will not delete the swap files after exit.
 
+The following command can be used to mount a filesystem into a directory mount point
 ```
 Usage: ps2mcfs <memory-card-image> <mount-point> [FUSE options]
+```
+
+You can obtain a PS2 virtual memory card image by storing it into a USB drive using [Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader) or, if using PCSX2 emulator, by copying the .mcd files from `~/.config/PCSX2/memcards`.
+
+The following command can be used to create an empty memory card image
+```
+Usage: bin/mkfs.ps2 -o OUTPUT_FILE [-s SIZE] [-e] [-h]
+Create a virtual memory card image file.
+
+  -s, --size=NUM        Set the memory card size in megabytes (options: 8)
+  -e, --ecc             Add ECC bytes to the generated file
+  -o, --output=FILE     Set the output file
+  -h, --help            Show this help
 ```
 
 ### Building
@@ -37,7 +51,7 @@ The executable is built with the makefile using `make`
 
 [PlayStation 2 Memory Card File System](http://www.csclub.uwaterloo.ca:11068/mymc/ps2mcfs.html)
 
-[Open PS2 Loader](https://bitbucket.org/ifcaro/open-ps2-loader/wiki/Home)
+[Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader)
 
 [PS2 Homebrew & emu scene](http://psx-scene.com/forums/ps2-homebrew-dev-emu-scene/)
 
