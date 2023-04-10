@@ -22,7 +22,7 @@ Also, some filesystem status considerations:
 
 The following command can be used to mount a filesystem into a directory mount point
 ```
-Usage: ps2mcfs <memory-card-image> <mount-point> [FUSE options]
+Usage: bin/fuseps2mc <ps2-memory-card-image> <mountpoint> [FUSE options]
 ```
 
 You can obtain a PS2 virtual memory card image by storing it into a USB drive using [Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader) or, if using PCSX2 emulator, by copying the .mcd files from `~/.config/PCSX2/memcards`.

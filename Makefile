@@ -27,7 +27,7 @@ clean:
 
 # executables
 
-$(BIN_DIR)/fuseps2mc: $(OBJ_DIR)/main.o $(OBJS) $(INCLUDES) Makefile
+$(BIN_DIR)/fuseps2mc: $(OBJ_DIR)/fuseps2mc.o $(OBJS) $(INCLUDES) Makefile
 	mkdir -p $(BIN_DIR)
 	$(CC) $< $(OBJS) $(CFLAGS) $(LIBS) -o "$@"
 

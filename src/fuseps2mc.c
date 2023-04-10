@@ -159,13 +159,18 @@ static struct fuse_operations operations = {
 	.rmdir = do_rmdir
 };
 
-void usage(char* arg0) {
-	printf("Usage: %s <ps2-memory-card-image> <mountpoint> [FUSE options]\n", arg0);
+void usage(FILE* stream, char* arg0) {
+	fprintf(
+		stream,
+		"Usage: %s <ps2-memory-card-image> <mountpoint> [FUSE options]\n"
+		"Mounts a Sony PlayStation 2 memory card image as a local filesystem in userspace\n",
+		arg0
+	);
 }
 
 int main(int argc, char** argv) {
 	if (argc < 3) {
-		usage(argv[0]);
+		usage(stderr, argv[0]);
 		return 1;
 	}
 	char** nargv = (char**)malloc((argc-1) * sizeof(char*));
