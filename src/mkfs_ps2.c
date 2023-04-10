@@ -35,11 +35,6 @@ int copy_optarg(char** dest) {
     return optarg_len;
 }
 
-void write_page_spare_part(void* spare_part_start, void* page_start) {
-    memset(spare_part_start, 0, PAGE_SPARE_PART_SIZE);
-    ecc512_calculate(spare_part_start, page_start);
-}
-
 int main(int argc, char** argv) {
     // initialize default superblock
     superblock_t superblock;
@@ -144,17 +139,20 @@ int main(int argc, char** argv) {
     #define DEBUG_LOG(fmt, ...) \
         DEBUG_printf(fmt " at offset 0x%lx (cluster: %lu, block: %lu)\n" __VA_OPT__(,) __VA_ARGS__, ftell(output_file), ftell(output_file) / physical_page_size / superblock.pages_per_cluster, ftell(output_file) / physical_page_size / superblock.pages_per_block)
     
+    #define WRITE_ECC() if (superblock.card_flags & CF_USE_ECC) { \
+        memset(page_buffer + superblock.page_size, 0, PAGE_SPARE_PART_SIZE); \
+        ecc512_calculate(page_buffer + superblock.page_size, page_buffer); \
+    }
+    
     DEBUG_LOG("Writing superblock");
     memset(page_buffer, 0xFF, physical_page_size);
     memcpy(page_buffer, &superblock, sizeof(superblock));
-    if (superblock.card_flags & CF_USE_ECC)
-        write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+    WRITE_ECC();
     fwrite(page_buffer, physical_page_size, 1, output_file);
 
     // fill the rest of the pages of the block with 0xFF plus ECC data
     memset(page_buffer, 0xFF, physical_page_size);
-    if (superblock.card_flags & CF_USE_ECC)
-        write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+    WRITE_ECC();
     for (int i = 0; i < superblock.pages_per_block - 1; i++)
         fwrite(page_buffer, physical_page_size, 1, output_file);
 
@@ -165,14 +163,12 @@ int main(int argc, char** argv) {
             uint32_t fat_cluster = max_indirect_fat_cluster + 1 + indirect_fat_entries_written;
             memcpy(page_buffer + i * sizeof(fat_cluster), &fat_cluster, sizeof(fat_cluster));
         }
-        if (superblock.card_flags & CF_USE_ECC)
-            write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+        WRITE_ECC();
         fwrite(page_buffer, physical_page_size, 1, output_file);
     }
     while (ftell(output_file) / physical_page_size / superblock.pages_per_cluster < max_indirect_fat_cluster + 1) {
         memset(page_buffer, 0xFF, physical_page_size);
-        if (superblock.card_flags & CF_USE_ECC)
-            write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+        WRITE_ECC();
         fwrite(page_buffer, physical_page_size, 1, output_file);
     }
 
@@ -186,8 +182,7 @@ int main(int argc, char** argv) {
             }
             memcpy(page_buffer + i * sizeof(fat_entry_t), &entry, sizeof(fat_entry_t));
         }
-        if (superblock.card_flags & CF_USE_ECC)
-            write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+        WRITE_ECC();
         fwrite(page_buffer, physical_page_size, 1, output_file);
     }
 
@@ -196,8 +191,7 @@ int main(int argc, char** argv) {
         DEBUG_LOG("Writing root dir entries %u-%u", root_directory_entries_written, root_directory_entries_written + copy_count - 1);
         memset(page_buffer, 0xFF, physical_page_size);
         memcpy(page_buffer, &ROOT_DIR_ENTRIES[root_directory_entries_written], sizeof(dir_entry_t) * copy_count);
-        if (superblock.card_flags & CF_USE_ECC)
-            write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+        WRITE_ECC();
         fwrite(page_buffer, physical_page_size, 1, output_file);
         root_directory_entries_written += copy_count;
         allocatable_pages_written += 1;
@@ -206,8 +200,7 @@ int main(int argc, char** argv) {
     // write pages containing ECC data for the rest of the erase-block
     DEBUG_LOG("Writing padding data with ECC for erase block");
     memset(page_buffer, 0xFF, physical_page_size);
-    if (superblock.card_flags & CF_USE_ECC)
-        write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+    WRITE_ECC();
     while (ftell(output_file) % (superblock.pages_per_block * physical_page_size) != 0) {
         fwrite(page_buffer, physical_page_size, 1, output_file);
         ++allocatable_pages_written;
@@ -229,8 +222,7 @@ int main(int argc, char** argv) {
         // erase block1 contains a copy of the superblock
         if (i == 0)
             memcpy(page_buffer, &superblock, sizeof(superblock));
-        if (superblock.card_flags & CF_USE_ECC)
-            write_page_spare_part(page_buffer + superblock.page_size, page_buffer);
+        WRITE_ECC();
         fwrite(page_buffer, physical_page_size, 1, output_file);
     }
 
