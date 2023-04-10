@@ -5,7 +5,7 @@ INC_DIR = src/
 SRC_DIR = src/
 
 OBJS =     $(addprefix $(OBJ_DIR)/, ps2mcfs.o fat.o ecc.o)
-INCLUDES = $(addprefix $(INC_DIR), ps2mcfs.h fat.h ecc.h vmc_types.h)
+INCLUDES = $(addprefix $(INC_DIR), ps2mcfs.h fat.h ecc.h vmc_types.h utils.h)
 
 CC =     cc
 CFLAGS = $(shell pkg-config fuse3 --cflags) -Wall -ggdb3 -O0 -std=gnu11 -D DEBUG=1

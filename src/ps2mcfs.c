@@ -4,17 +4,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <sys/param.h>
 
 #include "vmc_types.h"
 #include "fat.h"
 #include "ps2mcfs.h"
+#include "utils.h"
 
-#define div_ceil(x, y) ((x)/(y) + ((x)%(y) != 0))
 
 bool ps2mcfs_is_directory(const dir_entry_t* const dirent) {
 	return dirent->mode & DF_DIRECTORY;

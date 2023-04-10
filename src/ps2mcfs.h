@@ -1,22 +1,8 @@
-
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sys/stat.h>
+#include <sys/stat.h> // struct stat
 
 #include "fat.h"
-
-static const uint16_t DF_READ = 0x0001;
-static const uint16_t DF_WRITE = 0x0002;
-static const uint16_t DF_EXECUTE = 0x0004;
-static const uint16_t DF_FILE = 0x0010;
-static const uint16_t DF_DIRECTORY = 0x0020;
-static const uint16_t DF_EXISTS = 0x8000;
-
 
 /**
  * Converts a UNIX `time_t` struct into an equivalent `date_time_t` struct that is suitable for storing a PS2 FAT direntry

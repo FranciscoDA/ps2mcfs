@@ -5,8 +5,8 @@
 #include "fat.h"
 #include "ecc.h"
 #include "vmc_types.h"
+#include "utils.h"
 
-#define MIN(a,b) ((a)<(b) ? (a) : (b))
 
 /* Data about the card geometry */
 

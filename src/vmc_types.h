@@ -63,6 +63,18 @@ enum card_flags {
     CF_ERASE_ZEROES = 0x10, // Erased blocks have all bits set to zero.
 };
 
+enum directory_flags {
+	DF_READ = 0x0001, // Read permission
+	DF_WRITE = 0x0002, // Write permission
+	DF_EXECUTE = 0x0004, // Execute permission (unused)
+	DF_PROTECTED = 0x0008, // Directory is copy protected (Meaningful only to the browser)
+	DF_FILE = 0x0010, // Regular file
+	DF_DIRECTORY = 0x0020, // Directory
+	DF_0400 = 0x0400, // Set when files and directories are created, otherwise ignored
+	DF_EXISTS = 0x8000,
+	DF_HIDDEN = 0x2000
+};
+
 typedef struct {
 	char      magic[40]; // "Sony PS2 Memory Card Format "
 	uint16_t  page_size;
@@ -109,11 +121,5 @@ typedef struct {
 	size_t page_spare_area_size;
 	uint8_t ecc_bytes;
 } vmc_meta_t;
-
-#ifdef DEBUG
-#define DEBUG_printf(...) printf(__VA_ARGS__)
-#else
-#define DEBUG_printf(...)
-#endif
 
 #endif
