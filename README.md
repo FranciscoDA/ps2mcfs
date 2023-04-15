@@ -11,8 +11,9 @@ Implemented filesystem operations:
  * write
  * rmdir
  * unlink
+ * rename
 
-The implemented operations allow basic read/write commands: mkdir, touch, cat, less, rm, etc. However, writes are not persistent in the sense that changes are lost when the filesystem is unmounted.
+The implemented operations allow basic read/write commands: mkdir, touch, cat, less, rm, mv, etc. However, writes are not persistent in the sense that changes are lost when the filesystem is unmounted.
 
 Also, some filesystem status considerations:
  * access times are missing (they're not supported by the filesystem specification). Files will show as being last accessed in Jan 1st of 1970
