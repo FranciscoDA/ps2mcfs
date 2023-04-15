@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <libgen.h>
+#include <linux/fs.h> // RENAME_EXCHANGE, RENAME_NOREPLACE
 #include <linux/limits.h> // PATH_MAX
 
 #define FUSE_USE_VERSION 30
@@ -16,6 +17,8 @@
 
 #include "vmc_types.h"
 #include "ps2mcfs.h"
+#include "utils.h"
+
 
 static char vmc_file_path[PATH_MAX];
 static vmc_meta_t vmc_metadata = {.superblock = NULL, .raw_data = NULL, .ecc_bytes = 0};
@@ -98,6 +101,7 @@ static int do_mkdir(const char* path, mode_t mode) {
 }
 
 static int do_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
+	printf("Creating file %s\n", path);
 	char dir_name[PATH_MAX];
 	char base_name[NAME_MAX];
 	strcpy(dir_name, path);
@@ -106,8 +110,8 @@ static int do_create(const char* path, mode_t mode, struct fuse_file_info* fi) {
 	int err = ps2mcfs_browse(&vmc_metadata, NULL, dirname(dir_name), &parent);
 	if (err)
 		return err;
-	mode = ((mode/64)|(mode/8)|mode) & 0007;
-	return ps2mcfs_create(&vmc_metadata, &parent.dirent, basename(base_name), mode);
+	mode = ((mode / 64) | (mode / 8) | mode) & 0007;
+	return ps2mcfs_create(&vmc_metadata, &parent.dirent, basename(base_name), CLUSTER_INVALID, mode);
 }
 
 static int do_utimens(const char* path, const struct timespec tv[2], struct fuse_file_info* fi) {
@@ -116,7 +120,20 @@ static int do_utimens(const char* path, const struct timespec tv[2], struct fuse
 	if (err)
 		return err;
 	date_time_t modification;
-	ps2mcfs_time_to_date_time(tv[1].tv_sec, &modification);
+	if (tv[1].tv_nsec == UTIME_OMIT) {
+		// UTIMENSAT(2): If the tv_nsec field of one of the timespec structures has the special
+		// value UTIME_OMIT, then the corresponding file timestamp is left unchanged
+		return 0;
+	}
+	if (tv[1].tv_nsec == UTIME_NOW) {
+		// UTIMENSAT(2): If the tv_nsec field of one of the timespec structures has the special
+		// value UTIME_NOW, then the corresponding file timestamp is set to the current time
+		ps2mcfs_time_to_date_time(time(NULL), &modification);
+	}
+	else {
+		// 1 second = 1e9 nanoseconds
+		ps2mcfs_time_to_date_time(tv[1].tv_nsec / 1000000000, &modification);
+	}
 	ps2mcfs_utime(&vmc_metadata, &result, modification);
 	return 0;
 }
@@ -145,6 +162,52 @@ static int do_rmdir(const char* path) {
 	return ps2mcfs_rmdir(&vmc_metadata, result.dirent, result.parent, result.index);
 }
 
+static int do_rename(const char * path_from, const char * path_to, unsigned int flags) {
+	browse_result_t origin, destination;
+	int err1 = ps2mcfs_browse(&vmc_metadata, NULL, path_from, &origin);
+	int err2 = ps2mcfs_browse(&vmc_metadata, NULL, path_to, &destination);
+
+	if (err1) {
+		return err1;
+	}
+	if ((flags & RENAME_NOREPLACE) && !err2) {
+		return -EEXIST;
+	}
+	if ((flags & RENAME_EXCHANGE) && err2) {
+		return -ENOENT;
+	}
+	// target file does not exist. create it
+	if (err2 == -ENOENT) {
+		char dir_name[PATH_MAX];
+		char base_name[NAME_MAX];
+		strcpy(dir_name, path_to);
+		strcpy(base_name, path_to);
+		// browse to the parent dir
+		if ((err2 = ps2mcfs_browse(&vmc_metadata, NULL, dirname(dir_name), &destination)))
+			return err2;
+		if ((err2 = ps2mcfs_create(&vmc_metadata, &destination.dirent, basename(base_name), origin.dirent.cluster, origin.dirent.mode)))
+			return err2;
+	}
+
+	// browse again to reload dirents and parent dirents
+	if ((err1 = ps2mcfs_browse(&vmc_metadata, NULL, path_from, &origin)))
+		return err1;
+	if ((err2 = ps2mcfs_browse(&vmc_metadata, NULL, path_to, &destination)))
+		return err2;
+
+	// Swap files origin <-> destination
+	ps2mcfs_set_child(&vmc_metadata, destination.parent.cluster, destination.index, &origin.dirent);
+	ps2mcfs_set_child(&vmc_metadata, origin.parent.cluster, origin.index, &destination.dirent);
+	// delete the old origin, which is now stored in destination.parent[destination.index]
+	if (!(flags & RENAME_EXCHANGE)) {
+		// prevent deleting the contents of the moved file in case they point to the same file contents
+		if (origin.dirent.cluster == destination.dirent.cluster)
+			origin.dirent.cluster = CLUSTER_INVALID;
+		ps2mcfs_unlink(&vmc_metadata, origin.dirent, destination.parent, destination.index);
+	}
+	return 0;
+}
+
 static struct fuse_operations operations = {
 	.init = do_init,
 	.getattr = do_getattr,
@@ -156,7 +219,8 @@ static struct fuse_operations operations = {
 	.utimens = do_utimens,
 	.write = do_write,
 	.unlink = do_unlink,
-	.rmdir = do_rmdir
+	.rmdir = do_rmdir,
+	.rename = do_rename,
 };
 
 void usage(FILE* stream, char* arg0) {
@@ -173,13 +237,8 @@ int main(int argc, char** argv) {
 		usage(stderr, argv[0]);
 		return 1;
 	}
-	char** nargv = (char**)malloc((argc-1) * sizeof(char*));
-	nargv[0] = argv[0];
-	for (int i = 2; i < argc; i++)
-		nargv[i-1] = argv[i];
-	int nargc = argc-1;
-
 	realpath(argv[1], vmc_file_path);
-	return fuse_main(nargc, nargv, &operations, NULL);
+	SWAP(argv[1], argv[argc - 1]);
+	return fuse_main(argc - 1, argv, &operations, NULL);
 }
 
