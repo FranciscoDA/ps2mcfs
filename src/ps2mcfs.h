@@ -34,7 +34,7 @@ int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* n
 /**
  * Creates a directory entry for a new file
 */
-int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, uint16_t mode);
+int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, cluster_t cluster, uint16_t mode);
 
 /**
  * Writes data into the file referenced by the directory entry
@@ -45,3 +45,5 @@ int ps2mcfs_write(const vmc_meta_t* vmc_meta, const browse_result_t* dirent, con
 int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, const dir_entry_t parent, size_t index_in_parent);
 
 int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent);
+
+int ps2mcfs_set_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* src);

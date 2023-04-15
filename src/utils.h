@@ -12,4 +12,6 @@
 #define DEBUG_printf(...)
 #endif
 
+#define SWAP(x, y) { typeof(x) SWAP = x; x = y; y = SWAP; }
+
 #endif

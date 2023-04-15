@@ -195,8 +195,8 @@ void ps2mcfs_stat(const dir_entry_t* const dirent, struct stat* stbuf) {
 	stbuf->st_size = dirent->length;
 	stbuf->st_blksize = sizeof(dir_entry_t);
 	stbuf->st_blocks = 1;
-	stbuf->st_mtime = date_time_to_timestamp(&dirent->modification);
-	stbuf->st_ctime = date_time_to_timestamp(&dirent->creation);
+	stbuf->st_mtime = date_time_to_timestamp(&dirent->creation);
+	stbuf->st_ctime = date_time_to_timestamp(&dirent->modification);
 	// fat32 doesn't manage per-user permissions, copy rwx permissions
 	// across the 'user', 'group' and 'other' umasks
 	stbuf->st_mode += (dirent->mode & 7) * 0111;
@@ -268,13 +268,13 @@ int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* n
 	return 0;
 }
 
-int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, uint16_t mode) {
-	DEBUG_printf("Creating new empty file %s/%s\n", parent->name, name);
+int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, cluster_t cluster, uint16_t mode) {
+	DEBUG_printf("Creating new file %s/%s, cluster: %u, mode: %03o\n", parent->name, name, cluster, mode);
 	dir_entry_t new_child;
 	new_child.mode = mode | DF_FILE | DF_EXISTS;
 	new_child.length = 0;
 	ps2mcfs_time_to_date_time(time(NULL), &new_child.creation);
-	new_child.cluster = CLUSTER_INVALID; // create empty file
+	new_child.cluster = cluster;
 	new_child.modification = new_child.creation;
 	new_child.attributes = 0;
 	strcpy(new_child.name, name);
