@@ -1,3 +1,6 @@
+#ifndef __PS2MCFS_H__
+#define __PS2MCFS_H__
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/stat.h> // struct stat
@@ -47,3 +50,5 @@ int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, 
 int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent);
 
 int ps2mcfs_set_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* src);
+
+#endif

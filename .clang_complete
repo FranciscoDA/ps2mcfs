@@ -1,5 +1,6 @@
 -I/usr/include/fuse3
 
+-I./vendor
 -Wall
 -ggdb3
 -O0
