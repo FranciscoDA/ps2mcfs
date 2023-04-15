@@ -237,4 +237,7 @@ int main(int argc, char** argv) {
     }
 
     fclose(output_file);
+    free(page_buffer);
+    if (option_output_filename)
+        free(option_output_filename);
 }
