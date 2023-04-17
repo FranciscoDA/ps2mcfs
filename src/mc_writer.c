@@ -52,11 +52,15 @@ int mc_writer_write_empty(const superblock_t* superblock, FILE* output_file) {
     const unsigned max_fat_entries = superblock->last_allocatable;
     const unsigned max_indirect_fat_entries = div_ceil(max_fat_entries, words_per_cluster);
     const unsigned max_indirect_fat_clusters = div_ceil(max_indirect_fat_entries, words_per_cluster);
-    DEBUG_printf("Max indirect fat table entries: %u / %u = %u\n", max_fat_entries, words_per_cluster, max_indirect_fat_entries);
-
     #define DEBUG_LOG(fmt, ...) \
-        DEBUG_printf(fmt " at offset 0x%lx (cluster: %lu, block: %lu)\n" __VA_OPT__(,) __VA_ARGS__, ftell(output_file), ftell(output_file) / physical_page_size / superblock->pages_per_cluster, ftell(output_file) / physical_page_size / superblock->pages_per_block)
-    
+        DEBUG_printf( \
+            "[off: 0x%06lx   clus: %4lu   block: %4lu] " fmt "\n", \
+            ftell(output_file), \
+            ftell(output_file) / physical_page_size / superblock->pages_per_cluster, \
+            ftell(output_file) / physical_page_size / superblock->pages_per_block __VA_OPT__(,) \
+            __VA_ARGS__ \
+        )
+
     #define WRITE_ECC() if (superblock->card_flags & CF_USE_ECC) { \
         memset(page_buffer + superblock->page_size, 0, PAGE_SPARE_PART_SIZE); \
         ecc512_calculate(page_buffer + superblock->page_size, page_buffer); \
@@ -76,7 +80,7 @@ int mc_writer_write_empty(const superblock_t* superblock, FILE* output_file) {
 
     DEBUG_printf("Max indirect FAT table entries: %d\n", max_indirect_fat_entries);
     while (indirect_fat_entries_written < max_indirect_fat_entries) {
-        DEBUG_LOG("Writing indirect FAT table clusters (%u/%u)", indirect_fat_entries_written, max_indirect_fat_entries);
+        DEBUG_LOG("Writing indirect FAT table clusters (%u / %u)", indirect_fat_entries_written + 1, max_indirect_fat_entries);
         memset(page_buffer, 0xFF, physical_page_size);
         for (int i = 0; i < superblock->page_size / sizeof(uint32_t) && indirect_fat_entries_written < max_indirect_fat_entries; ++i, ++indirect_fat_entries_written) {
             // add an offset corresponding to 1 block (the superblock)
@@ -93,7 +97,7 @@ int mc_writer_write_empty(const superblock_t* superblock, FILE* output_file) {
     }
 
     while (fat_entries_written < max_fat_entries) {
-        DEBUG_LOG("Writing FAT table");
+        DEBUG_LOG("Writing FAT table (%u / %u)", fat_entries_written + 1, max_fat_entries);
         memset(page_buffer, 0xFF, physical_page_size);
         for (int i = 0; i < superblock->page_size / sizeof(fat_entry_t) && fat_entries_written < max_fat_entries; ++i, ++fat_entries_written) {
             fat_entry_t entry = {.entry = {.occupied = 0, .next_cluster = CLUSTER_INVALID}};
@@ -107,8 +111,8 @@ int mc_writer_write_empty(const superblock_t* superblock, FILE* output_file) {
     }
 
     while (root_directory_entries_written < ROOT_DIR_ENTRIES[0].length) {
+        DEBUG_LOG("Writing root dir entry (%u / %u)", root_directory_entries_written + 1, ROOT_DIR_ENTRIES[0].length);
         unsigned copy_count = MIN(dirents_per_page, ROOT_DIR_ENTRIES[0].length - root_directory_entries_written);
-        DEBUG_LOG("Writing root dir entries %u-%u", root_directory_entries_written, root_directory_entries_written + copy_count - 1);
         memset(page_buffer, 0xFF, physical_page_size);
         memcpy(page_buffer, &ROOT_DIR_ENTRIES[root_directory_entries_written], sizeof(dir_entry_t) * copy_count);
         WRITE_ECC();
