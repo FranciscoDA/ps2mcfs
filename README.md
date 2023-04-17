@@ -42,11 +42,13 @@ Create a virtual memory card image file.
 ### Building
 
 The following packages are needed to build the project in Ubuntu:
-* libfuse3-dev
-* pkgconf
-* clang-tools
+* `libfuse3-dev`
+* `pkgconf`
+* `clang-tools`
 
-The executable is built with the makefile using `make`
+Submodules must be initialized and updated to fetch dependencies on external libraries: `git submodule init && git submodule update -f`
+
+The executables can then be built by invoking `make`
 
 ### See also
 
@@ -59,3 +61,5 @@ The executable is built with the makefile using `make`
 [PS2 NBD server plugin](https://github.com/bignaux/lwNBD/blob/main/plugins/mcman/lwnbd-mcman-plugin.md) allows accessing VMC files through your PS2
 
 [PS2iconsys](https://github.com/ticky/ps2iconsys) allows converting PS2 icons into their respective geometry and texture files and viceversa
+
+[µnit](https://nemequ.github.io/munit/) Unit testing framework
