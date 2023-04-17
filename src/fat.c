@@ -97,10 +97,12 @@ cluster_t fat_find_free_cluster(const vmc_meta_t* vmc_meta, cluster_t clus) {
 
 cluster_t fat_truncate(const vmc_meta_t* vmc_meta, cluster_t clus, size_t truncated_length) {
 	fat_entry_t fat_value = fat_get_table_entry(vmc_meta, clus);
-	while (truncated_length > 1 && fat_value.entry.occupied && fat_value.raw != FAT_ENTRY_TERMINATOR.raw) {
+	while (truncated_length > 1) {
+		--truncated_length;
+		if (!fat_value.entry.occupied || fat_value.raw == FAT_ENTRY_TERMINATOR.raw)
+			break;
 		clus = fat_value.entry.next_cluster;
 		fat_value = fat_get_table_entry(vmc_meta, clus);
-		--truncated_length;
 	}
 	cluster_t last_cluster = clus;
 
@@ -201,4 +203,3 @@ size_t fat_read_bytes(const vmc_meta_t* vmc_meta, cluster_t clus0, logical_offse
 size_t fat_write_bytes(const vmc_meta_t* vmc_meta, cluster_t clus0, logical_offset_t offset, size_t size, const void* buf) {
 	return fat_rw_bytes(vmc_meta, clus0, offset, size, NULL, buf);
 }
-
