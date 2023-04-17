@@ -7,8 +7,8 @@ SRC_DIR = src
 OBJS =     $(addprefix $(OBJ_DIR)/, ps2mcfs.o fat.o ecc.o mc_writer.o)
 INCLUDES = $(addprefix $(INC_DIR)/, ps2mcfs.h fat.h ecc.h vmc_types.h utils.h)
 
-TEST_OBJS = $(addprefix $(OBJ_DIR)/, munit.o)
-TEST_INCLUDES = vendor/munit/munit.h
+TEST_OBJS = $(addprefix $(OBJ_DIR)/, munit.o)  # test-only objects
+TEST_INCLUDES = vendor/munit/munit.h  # test-only includes
 
 CC =     cc
 CFLAGS = $(shell pkg-config fuse3 --cflags) -I./vendor -Wall -ggdb3 -O0 -std=gnu11 -D DEBUG=1

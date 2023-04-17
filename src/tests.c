@@ -22,18 +22,22 @@ static MunitResult test_new_empty_card_with_ecc(const MunitParameter params[], v
 	superblock_t* superblock = vmc_meta->raw_data;
 
 	dir_entry_t dirent;
+
+	// check that everything looks OK for the first direntry (the `.` dummy entry)
 	ps2mcfs_get_child(vmc_meta, superblock->root_cluster, 0, &dirent);
 	munit_assert_int(dirent.cluster, ==, 0);
 	munit_assert_ulong(dirent.length, ==, 2);
 	munit_assert_string_equal(dirent.name, ".");
+
+	// ditto for the `..` dummy entry
 	ps2mcfs_get_child(vmc_meta, superblock->root_cluster, 1, &dirent);
 	munit_assert_int(dirent.cluster, ==, 0);
 	munit_assert_string_equal(dirent.name, "..");
 
-	size_t occupied_clusters = count_occupied_clusters(vmc_meta);
-
 	// the number of occupied clusters must be equal to the number of clusters occupied by 2 dirents
-	munit_assert_long(occupied_clusters, ==, div_ceil(2 * sizeof(dirent), superblock->page_size * superblock->pages_per_cluster));
+	size_t occupied_clusters = count_occupied_clusters(vmc_meta);
+	size_t expected_occupied_clusters = div_ceil(2 * sizeof(dirent), superblock->page_size * superblock->pages_per_cluster);
+	munit_assert_long(occupied_clusters, ==, expected_occupied_clusters);
 
 	return MUNIT_OK;
 }
