@@ -1,4 +1,6 @@
 # ps2mcfs
+![Tests status](https://github.com/franciscoda/ps2mcfs/actions/workflows/test.yml/badge.svg)
+
 FUSE driver for PlayStation 2 Virtual Memory Card (VMC) images. This will allow you to mount VMC images from Open PS2 Loader or PCSX2 in userspace.
 
 Implemented filesystem operations:
