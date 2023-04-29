@@ -1,8 +1,9 @@
 #ifndef _VMC_TYPES_H_
 #define _VMC_TYPES_H_
 
-#include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 
 typedef uint32_t cluster_t; // cluster index
@@ -40,10 +41,10 @@ typedef struct {
 typedef struct {
 	uint16_t mode;
 	uint16_t _unused0;
-	uint32_t length;    // Length in bytes if a file, or entries if a directory. 
+	uint32_t length;    // Length in bytes if a file, or entries if a directory.
 	date_time_t creation;
 	cluster_t cluster;  // First cluster of the file, or 0xFFFFFFFF for an empty file. In "." entries this the first cluster of this directory's parent directory instead
-	uint32_t dir_entry; // Only in "." entries. Entry of this directory in its parent's directory. 
+	uint32_t dir_entry; // Only in "." entries. Entry of this directory in its parent's directory.
 	date_time_t modification;
 	uint32_t attributes;
 	char _unused1[28];
@@ -120,6 +121,8 @@ typedef struct {
 	void* raw_data;
 	size_t page_spare_area_size;
 	uint8_t ecc_bytes;
+	bool sync_to_fs;
+	char* mc_file_path;
 } vmc_meta_t;
 
 #endif

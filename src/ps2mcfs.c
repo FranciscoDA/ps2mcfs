@@ -115,7 +115,7 @@ void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_e
 		}
 		dir_entry_t child;
 		ps2mcfs_get_child(vmc_meta, clus, i % dirents_per_cluster, &child);
-		
+
 		if (child.mode & DF_EXISTS) {
 			if (cb(&child, extra) != 0)
 				break;
@@ -334,9 +334,8 @@ int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, 
 }
 
 int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent) {
-	// NOTE: The following is not necessary as FUSE3 calls unlink() for each file before calling rmdir
-	// start at index=2 (skip `.` and `..` dummy entries)
-	/*for (int i = 2; i < removed_dir.length; ++i) {
+	// Remove children starting at index=2 (skip `.` and `..` dummy entries)
+	for (int i = 2; i < removed_dir.length; ++i) {
 		// get and free all the clusters
 		dir_entry_t child;
 		ps2mcfs_get_child(vmc_meta, removed_dir.cluster, i, &child);
@@ -344,7 +343,8 @@ int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, con
 			ps2mcfs_rmdir(vmc_meta, removed_dir, child, i);
 		}
 		fat_truncate(vmc_meta, child.cluster, 0);
-	}*/
+	}
+	// NOTE: The above is not stricly necessary as rm -r calls unlink() for each file before calling rmdir
 
 	return ps2mcfs_unlink(vmc_meta, removed_dir, parent, index_in_parent);
 }

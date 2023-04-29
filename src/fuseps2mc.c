@@ -1,30 +1,29 @@
-
+#include <getopt.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <limits.h>
-#include <libgen.h>
+#include <errno.h> // EEXIST, ENOENT
+#include <limits.h> // NAME_MAX
+#include <libgen.h> // dirname
 #include <linux/fs.h> // RENAME_EXCHANGE, RENAME_NOREPLACE
-#include <linux/limits.h> // PATH_MAX
 
 #define FUSE_USE_VERSION 30
 
 #include <fuse3/fuse.h>
+#include <fuse3/fuse_common.h>
 
 #include "vmc_types.h"
 #include "ps2mcfs.h"
 #include "utils.h"
 
 
-static char vmc_file_path[PATH_MAX];
-static vmc_meta_t vmc_metadata = {.superblock = NULL, .raw_data = NULL, .ecc_bytes = 0};
+// global static instance for VMC metadata
+static vmc_meta_t vmc_metadata = {.superblock = NULL, .raw_data = NULL, .ecc_bytes = 0, .sync_to_fs = false, .mc_file_path = NULL};
 
 static void* do_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
-	FILE* f = fopen(vmc_file_path, "rb");
+	FILE* f = fopen(vmc_metadata.mc_file_path, "rb");
 	fseek(f, 0, SEEK_END);
 	size_t size = ftell(f);
 	fseek(f, 0, SEEK_SET);
@@ -223,22 +222,205 @@ static struct fuse_operations operations = {
 	.rename = do_rename,
 };
 
-void usage(FILE* stream, char* arg0) {
+
+static const int OPT_KEY_MC_PATH = 0;
+
+
+struct cli_options {
+	// fuseps2mc options
+	char* mc_path;
+	int sync_to_fs;
+
+	// standard fuse options
+	char* mountpoint;
+	int singlethread;
+	int foreground;
+	int debug;
+	int show_version;
+	int show_help;
+	unsigned int max_threads;
+};
+
+static const struct fuse_opt CLI_OPTIONS[] = {
+	//FUSE_OPT_KEY("--mc ", OPT_KEY_MC_PATH),
+	//FUSE_OPT_KEY("-i ",   OPT_KEY_MC_PATH),
+	{.templ = "-S",             .offset = offsetof(struct cli_options, sync_to_fs),   .value = true},
+	{.templ = "-h",             .offset = offsetof(struct cli_options, show_help),    .value = 1},
+	{.templ = "--help",         .offset = offsetof(struct cli_options, show_help),    .value = 1},
+	{.templ = "-V",             .offset = offsetof(struct cli_options, show_version), .value = 1},
+	{.templ = "--version",      .offset = offsetof(struct cli_options, show_version), .value = 1},
+	{.templ = "-f",             .offset = offsetof(struct cli_options, foreground),   .value = 1},
+	{.templ = "-s",             .offset = offsetof(struct cli_options, singlethread), .value = 1},
+	{.templ = "max_threads=%u", .offset = offsetof(struct cli_options, max_threads),  .value = 1},
+	FUSE_OPT_END
+};
+
+
+void usage(FILE* stream, const char* program_name) {
 	fprintf(
 		stream,
-		"Usage: %s <ps2-memory-card-image> <mountpoint> [FUSE options]\n"
-		"Mounts a Sony PlayStation 2 memory card image as a local filesystem in userspace\n",
-		arg0
+		"Usage: %s <memory-card-image> <mountpoint> [OPTIONS]\n"
+		"Mounts a Sony PlayStation 2 memory card image as a local filesystem in userspace\n"
+		"Options:\n"
+		"    -S                     sync filesystem changes to the memorycard file\n"
+		"    -h   --help            print help\n"
+		"    -V   --version         print version\n"
+		"    -f                     foreground operation\n"
+		"    -s                     disable multi-threaded operation\n"
+		"    -o max_threads         the maximum number of threads allowed (default: 10)\n",
+		program_name
 	);
 }
 
-int main(int argc, char** argv) {
-	if (argc < 3) {
-		usage(stderr, argv[0]);
+
+int opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs) {
+	struct cli_options* opts = data;
+	if (key == FUSE_OPT_KEY_OPT) { // did not match any template
 		return 1;
 	}
-	realpath(argv[1], vmc_file_path);
-	SWAP(argv[1], argv[argc - 1]);
-	return fuse_main(argc - 1, argv, &operations, NULL);
+	else if (key == FUSE_OPT_KEY_NONOPT) {
+		if (!opts->mc_path) {
+			char mc_path[PATH_MAX] = "";
+			if (realpath(arg, mc_path) == NULL) {
+				fuse_log(FUSE_LOG_ERR, "fuse: bad mc file path `%s': %s\n", arg, strerror(errno));
+				return -1;
+			}
+			return fuse_opt_add_opt(&opts->mc_path, mc_path);
+		}
+		else if (!opts->mountpoint) {
+			char mountpoint[PATH_MAX] = "";
+			if (realpath(arg, mountpoint) == NULL) {
+				fuse_log(FUSE_LOG_ERR, "fuse: bad mount point `%s': %s\n", arg, strerror(errno));
+				return -1;
+			}
+			return fuse_opt_add_opt(&opts->mountpoint, mountpoint);
+		}
+	}
+	else if (key == OPT_KEY_MC_PATH) {
+		static const char short_option[] = "-i";
+		static const char long_option[] = "--mc";
+		int offset;
+		if (strncmp(arg, short_option, strlen(short_option)) == 0) {
+			offset = strlen(short_option);
+			//printf("mc path (short): %s\n", arg + strlen(short_option));
+		}
+		else if (strncmp(arg, long_option, strlen(long_option)) == 0) {
+			offset = strlen(long_option);
+			if (arg[offset] == '=')
+				++offset;
+		}
+		strcpy(((vmc_meta_t*) data)->mc_file_path, arg+offset );
+	}
+	return 0;
+}
+
+
+int main(int argc, char** argv) {
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+	struct cli_options opts = {
+		.mc_path = NULL,
+		.sync_to_fs = 0,
+
+		.mountpoint = NULL,
+		.show_help = 0,
+		.show_version = 0,
+		.singlethread = 0,
+		.foreground = 0,
+		.max_threads = 16
+	};
+
+	if (fuse_opt_parse(&args, &opts, CLI_OPTIONS, opt_proc) == -1)
+		return -1;
+
+
+	// code below is based on the implementation of `fuse_main_real()` from libfuse
+	int res;
+	struct fuse_loop_config *loop_config = NULL;
+
+	if (opts.show_version) {
+		printf("FUSE library version %u.%u\n", FUSE_MAJOR_VERSION, FUSE_MINOR_VERSION);
+		res = 0;
+		goto out1;
+	}
+
+	if (opts.show_help) {
+		if(args.argv[0][0] != '\0')
+			usage(stdout, args.argv[0]);
+		//fuse_cmdline_help();
+		fuse_lib_help(&args);
+		res = 0;
+		goto out1;
+	}
+
+	if (!opts.mc_path) {
+		fprintf(stderr, "fuseps2mc: no memory card file specified\n");
+		res = 2;
+		goto out1;
+	}
+	else {
+		vmc_metadata.mc_file_path = opts.mc_path;
+	}
+	if (!opts.mountpoint) {
+		fuse_log(FUSE_LOG_ERR, "error: no mountpoint specified\n");
+		res = 2;
+		goto out1;
+	}
+
+	struct fuse* fuse = fuse_new(&args, &operations, sizeof(operations), NULL);
+	if (fuse == NULL) {
+		res = 3;
+		goto out1;
+	}
+
+	if (fuse_mount(fuse,opts.mountpoint) != 0) {
+		res = 4;
+		goto out2;
+	}
+
+	if (fuse_daemonize(opts.foreground) != 0) {
+		res = 5;
+		goto out3;
+	}
+
+	struct fuse_session *se = fuse_get_session(fuse);
+	if (fuse_set_signal_handlers(se) != 0) {
+		res = 6;
+		goto out3;
+	}
+
+	if (opts.singlethread)
+		res = fuse_loop(fuse);
+	else {
+		loop_config = fuse_loop_cfg_create();
+		if (loop_config == NULL) {
+			res = 7;
+			goto out3;
+		}
+
+		fuse_loop_cfg_set_clone_fd(loop_config, 0);
+
+		fuse_loop_cfg_set_idle_threads(loop_config, 100);
+		fuse_loop_cfg_set_max_threads(loop_config, opts.max_threads);
+		#if FUSE_USE_VERSION < 32
+		res = fuse_loop_mt(fuse, loop_config->clone_fd);
+		#else
+		res = fuse_loop_mt(fuse, loop_config);
+		#endif
+	}
+	if (res)
+		res = 8;
+
+	fuse_remove_signal_handlers(se);
+out3:
+	fuse_unmount(fuse);
+out2:
+	fuse_destroy(fuse);
+out1:
+	fuse_loop_cfg_destroy(loop_config);
+	free(opts.mountpoint);
+	fuse_opt_free_args(&args);
+
+	free(opts.mc_path);
+	return res;
 }
 
