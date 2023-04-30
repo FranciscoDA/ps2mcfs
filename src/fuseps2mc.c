@@ -20,18 +20,11 @@
 
 
 // global static instance for VMC metadata
-static vmc_meta_t vmc_metadata = {.superblock = NULL, .raw_data = NULL, .ecc_bytes = 0, .sync_to_fs = false, .mc_file_path = NULL};
+static struct vmc_meta vmc_metadata = {.superblock = {{0}}, .file = NULL, .ecc_bytes = 0, .page_spare_area_size = 0};
 
 static void* do_init(struct fuse_conn_info* conn, struct fuse_config* cfg) {
-	FILE* f = fopen(vmc_metadata.mc_file_path, "rb");
-	fseek(f, 0, SEEK_END);
-	size_t size = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	void* vmc_raw_data = malloc(size);
-	fread(vmc_raw_data, size, 1, f);
-	fclose(f);
-	int err = ps2mcfs_get_superblock(&vmc_metadata, vmc_raw_data, size);
-	if (err == -1 || vmc_metadata.superblock == NULL || vmc_metadata.raw_data == NULL) {
+	int err = ps2mcfs_get_superblock(&vmc_metadata);
+	if (err == -1 || vmc_metadata.file == NULL) {
 		printf("Detected error while reading superblock\n");
 		struct fuse_context* ctx = fuse_get_context();
 		fuse_exit(ctx->fuse);
@@ -223,9 +216,6 @@ static struct fuse_operations operations = {
 };
 
 
-static const int OPT_KEY_MC_PATH = 0;
-
-
 struct cli_options {
 	// fuseps2mc options
 	char* mc_path;
@@ -296,21 +286,6 @@ int opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs) {
 			return fuse_opt_add_opt(&opts->mountpoint, mountpoint);
 		}
 	}
-	else if (key == OPT_KEY_MC_PATH) {
-		static const char short_option[] = "-i";
-		static const char long_option[] = "--mc";
-		int offset;
-		if (strncmp(arg, short_option, strlen(short_option)) == 0) {
-			offset = strlen(short_option);
-			//printf("mc path (short): %s\n", arg + strlen(short_option));
-		}
-		else if (strncmp(arg, long_option, strlen(long_option)) == 0) {
-			offset = strlen(long_option);
-			if (arg[offset] == '=')
-				++offset;
-		}
-		strcpy(((vmc_meta_t*) data)->mc_file_path, arg+offset );
-	}
 	return 0;
 }
 
@@ -357,11 +332,37 @@ int main(int argc, char** argv) {
 		res = 2;
 		goto out1;
 	}
-	else {
-		vmc_metadata.mc_file_path = opts.mc_path;
-	}
 	if (!opts.mountpoint) {
 		fuse_log(FUSE_LOG_ERR, "error: no mountpoint specified\n");
+		res = 2;
+		goto out1;
+	}
+
+	if (opts.sync_to_fs) {
+		vmc_metadata.file = fopen(opts.mc_path, "rb+");
+	}
+	else {
+		FILE* f = fopen(opts.mc_path, "rb+");
+		if (!f) {
+			fprintf(stderr, "error: could not open file: %s\n", opts.mc_path);
+			res = 2;
+			goto out1;
+		}
+		fseek(f, 0, SEEK_END);
+		size_t size = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		vmc_metadata.file = fmemopen(NULL, size, "rb+");
+
+		while (!feof(f)) {
+			char buffer[1024];
+			fwrite(buffer, 1, fread(buffer, 1, sizeof(buffer), f), vmc_metadata.file);
+		}
+
+		fclose(f);
+		fseek(vmc_metadata.file, 0, SEEK_SET);
+	}
+	if (!vmc_metadata.file) {
+		fprintf(stderr, "error: could not open file: %s\n", opts.mc_path);
 		res = 2;
 		goto out1;
 	}
@@ -420,7 +421,10 @@ out1:
 	free(opts.mountpoint);
 	fuse_opt_free_args(&args);
 
-	free(opts.mc_path);
+	if (opts.mc_path != NULL)
+		free(opts.mc_path);
+	if (vmc_metadata.file != NULL)
+		fclose(vmc_metadata.file);
 	return res;
 }
 

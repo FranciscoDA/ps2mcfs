@@ -40,21 +40,33 @@ time_t date_time_to_timestamp(const date_time_t* const dt) {
 	return mktime(&time);
 }
 
-int ps2mcfs_get_superblock(vmc_meta_t* metadata_out, void* raw_data, size_t size) {
-	// data is too small to contain a superblock
-	if (size < sizeof(superblock_t)) {
+int ps2mcfs_get_superblock(struct vmc_meta* metadata_out) {
+	if (metadata_out->file == NULL) {
 		return -1;
 	}
-	superblock_t* s = (superblock_t*) raw_data;
-	if (strncmp(s->magic, DEFAULT_SUPERBLOCK.magic, sizeof(DEFAULT_SUPERBLOCK.magic)) != 0) {
-		printf(
+	fseek(metadata_out->file, 0, SEEK_END);
+	size_t size = ftell(metadata_out->file);
+
+	if (size < sizeof(superblock_t)) {
+		// data is too small to contain a superblock
+		fprintf(stderr, "Memory card file is to small to contain a superblock. Size: %lu. Minimum: %lu \n", size, sizeof(superblock_t));
+		return -1;
+	}
+	fseek(metadata_out->file, 0, SEEK_SET);
+	fread(&metadata_out->superblock, sizeof(superblock_t), 1, metadata_out->file);
+
+	if (strncmp(metadata_out->superblock.magic, DEFAULT_SUPERBLOCK.magic, sizeof(DEFAULT_SUPERBLOCK.magic)) != 0) {
+		fprintf(
+			stderr,
 			"Magic string mismatch. Make sure the memory card was properly formatted."
-			"Expected: \"%s\". Read: \"%.*s\"\n", DEFAULT_SUPERBLOCK.magic, (int)(sizeof(DEFAULT_SUPERBLOCK.magic) - 1), s->magic
+			"Expected: \"%s\". Read: \"%.*s\"\n",
+			DEFAULT_SUPERBLOCK.magic,
+			(int)(sizeof(DEFAULT_SUPERBLOCK.magic) - 1), metadata_out->superblock.magic
 		);
 		return -1;
 	}
-	const size_t expected_size = s->clusters_per_card * s->pages_per_cluster * s->page_size;
-	const size_t expected_size_with_ecc = s->clusters_per_card * s->pages_per_cluster * (s->page_size + 16);
+	const size_t expected_size = metadata_out->superblock.clusters_per_card * metadata_out->superblock.pages_per_cluster * metadata_out->superblock.page_size;
+	const size_t expected_size_with_ecc = metadata_out->superblock.clusters_per_card * metadata_out->superblock.pages_per_cluster * (metadata_out->superblock.page_size + 16);
 	if (size == expected_size) {
 		metadata_out->ecc_bytes = 0;
 		metadata_out->page_spare_area_size = 0;
@@ -69,35 +81,34 @@ int ps2mcfs_get_superblock(vmc_meta_t* metadata_out, void* raw_data, size_t size
 			"\tExpected size (no ecc): %d clusters * %d pages per cluster * %d bytes per page = %luB.\n"
 			"\tExpected size (16 byte ecc): %d clusters * %d pages per cluster * %d bytes per page = %luB.\n",
 			size,
-			s->clusters_per_card,
-			s->pages_per_cluster,
-			s->page_size,
+			metadata_out->superblock.clusters_per_card,
+			metadata_out->superblock.pages_per_cluster,
+			metadata_out->superblock.page_size,
 			expected_size,
-			s->clusters_per_card,
-			s->pages_per_cluster,
-			s->page_size + 16,
+			metadata_out->superblock.clusters_per_card,
+			metadata_out->superblock.pages_per_cluster,
+			metadata_out->superblock.page_size + 16,
 			expected_size_with_ecc
 		);
 		return -1;
 	}
-	if (s->type != 2) {
-		printf("Unknown card type: %d. (expected 2)\n", s->type);
+	if (metadata_out->superblock.type != 2) {
+		printf("Unknown card type: %d. (expected 2)\n", metadata_out->superblock.type);
 		return -1;
 	}
-	metadata_out->superblock = s;
-	metadata_out->raw_data = raw_data;
-	printf("Mounted card flags: %x\n", metadata_out->superblock->card_flags);
+	//metadata_out->file = file;
+	printf("Mounted card flags: %x\n", metadata_out->superblock.card_flags);
 	return 0;
 }
 
-int ps2mcfs_get_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* dest) {
+int ps2mcfs_get_child(const struct vmc_meta* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* dest) {
 	size_t sz = fat_read_bytes(vmc_meta, clus0, entrynum * sizeof(dir_entry_t), sizeof(dir_entry_t), dest);
 	if (sz != sizeof(dir_entry_t))
 		return -ENOENT;
 	return 0;
 }
 
-int ps2mcfs_set_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* src) {
+int ps2mcfs_set_child(const struct vmc_meta* vmc_meta, cluster_t clus0, unsigned int entrynum, dir_entry_t* src) {
 	DEBUG_printf("Updating directory entry at index %u starting from cluster %u to: \"%s\" (cluster: %u, size: %u)\n", entrynum, clus0, src->name, src->cluster, src->length);
 	size_t sz = fat_write_bytes(vmc_meta, clus0, entrynum * sizeof(dir_entry_t), sizeof(dir_entry_t), src);
 	if(sz != sizeof(dir_entry_t))
@@ -105,7 +116,7 @@ int ps2mcfs_set_child(const vmc_meta_t* vmc_meta, cluster_t clus0, unsigned int 
 	return 0;
 }
 
-void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_entry_t* child, void* extra), void* extra) {
+void ps2mcfs_ls(const struct vmc_meta* vmc_meta, dir_entry_t* parent, int(* cb)(dir_entry_t* child, void* extra), void* extra) {
 	size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta) / sizeof(dir_entry_t);
 	cluster_t clus = parent->cluster;
 	for (int i = 0; i < parent->length; ++i) {
@@ -129,7 +140,7 @@ void ps2mcfs_ls(const vmc_meta_t* vmc_meta, dir_entry_t* parent, int(* cb)(dir_e
 /**
  * Fetch the dirent that corresponds to 'path' the dirent, parent and offset is returned in the dest pointer
  */
-int ps2mcfs_browse(const vmc_meta_t* vmc_meta, dir_entry_t* root, const char* path, browse_result_t* dest) {
+int ps2mcfs_browse(const struct vmc_meta* vmc_meta, dir_entry_t* root, const char* path, browse_result_t* dest) {
 	const size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta) / sizeof(dir_entry_t);
 
 	const char* slash = strchr(path, '/');
@@ -143,12 +154,7 @@ int ps2mcfs_browse(const vmc_meta_t* vmc_meta, dir_entry_t* root, const char* pa
 		dirent = *root;
 	}
 	else {
-		ps2mcfs_get_child(
-			vmc_meta,
-			vmc_meta->superblock->root_cluster,
-			0,
-			&dirent
-		);
+		ps2mcfs_get_child(vmc_meta, vmc_meta->superblock.root_cluster, 0, &dirent);
 	}
 
 	cluster_t clus = dirent.cluster;
@@ -202,7 +208,7 @@ void ps2mcfs_stat(const dir_entry_t* const dirent, struct stat* stbuf) {
 	stbuf->st_mode += (dirent->mode & 7) * 0111;
 }
 
-int ps2mcfs_read(const vmc_meta_t* vmc_meta, const dir_entry_t* dirent, void* buf, size_t size, off_t offset)  {
+int ps2mcfs_read(const struct vmc_meta* vmc_meta, const dir_entry_t* dirent, void* buf, size_t size, off_t offset)  {
 	if (offset > dirent->length)
 		return 0;
 	if (offset + size > dirent->length)
@@ -210,7 +216,7 @@ int ps2mcfs_read(const vmc_meta_t* vmc_meta, const dir_entry_t* dirent, void* bu
 	return fat_read_bytes(vmc_meta, dirent->cluster, offset, size, buf);
 }
 
-int ps2mcfs_add_child(const vmc_meta_t* vmc_meta, dir_entry_t* parent, dir_entry_t* new_child) {
+int ps2mcfs_add_child(const struct vmc_meta* vmc_meta, dir_entry_t* parent, dir_entry_t* new_child) {
 	DEBUG_printf("Adding new child \"%s/%s\"\n", parent->name, new_child->name);
 	const size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta) / sizeof(dir_entry_t);
 	const size_t new_size = div_ceil(parent->length + 1, dirents_per_cluster);
@@ -227,13 +233,13 @@ int ps2mcfs_add_child(const vmc_meta_t* vmc_meta, dir_entry_t* parent, dir_entry
 	return 0;
 }
 
-void ps2mcfs_utime(const vmc_meta_t* vmc_meta, browse_result_t* dirent, date_time_t modification) {
+void ps2mcfs_utime(const struct vmc_meta* vmc_meta, browse_result_t* dirent, date_time_t modification) {
 	dirent->dirent.modification = modification;
 	dirent->dirent.creation = modification; // probably not ok
 	ps2mcfs_set_child(vmc_meta, dirent->parent.cluster, dirent->index, &dirent->dirent);
 }
 
-int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, uint16_t mode) {
+int ps2mcfs_mkdir(const struct vmc_meta* vmc_meta, dir_entry_t* parent, const char* name, uint16_t mode) {
 	size_t dirents_per_cluster = fat_cluster_capacity(vmc_meta)/sizeof(dir_entry_t);
 	dir_entry_t new_child;
 	new_child.mode = mode | DF_DIRECTORY | DF_EXISTS;
@@ -268,7 +274,7 @@ int ps2mcfs_mkdir(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* n
 	return 0;
 }
 
-int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* name, cluster_t cluster, uint16_t mode) {
+int ps2mcfs_create(const struct vmc_meta* vmc_meta, dir_entry_t* parent, const char* name, cluster_t cluster, uint16_t mode) {
 	DEBUG_printf("Creating new file %s/%s, cluster: %u, mode: %03o\n", parent->name, name, cluster, mode);
 	dir_entry_t new_child;
 	new_child.mode = mode | DF_FILE | DF_EXISTS;
@@ -285,7 +291,7 @@ int ps2mcfs_create(const vmc_meta_t* vmc_meta, dir_entry_t* parent, const char* 
 	return 0;
 }
 
-int ps2mcfs_write(const vmc_meta_t* vmc_meta, const browse_result_t* dirent, const void* buf, size_t size, off_t offset) {
+int ps2mcfs_write(const struct vmc_meta* vmc_meta, const browse_result_t* dirent, const void* buf, size_t size, off_t offset) {
 	if (offset + size > dirent->dirent.length) {
 		dir_entry_t new_entry = dirent->dirent;
 		if (new_entry.cluster == CLUSTER_INVALID) {
@@ -303,7 +309,7 @@ int ps2mcfs_write(const vmc_meta_t* vmc_meta, const browse_result_t* dirent, con
 	return fat_write_bytes(vmc_meta, dirent->dirent.cluster, offset, size, buf);
 }
 
-int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, const dir_entry_t parent, size_t index_in_parent) {
+int ps2mcfs_unlink(const struct vmc_meta* vmc_meta, const dir_entry_t unlinked_file, const dir_entry_t parent, size_t index_in_parent) {
 	DEBUG_printf("Unlinking file %s/%s index %lu/%u\n", parent.name, unlinked_file.name, index_in_parent, parent.length - 1);
 	// free all the clusters in the deleted file (if it's not empty)
 	if (unlinked_file.cluster != CLUSTER_INVALID)
@@ -333,7 +339,7 @@ int ps2mcfs_unlink(const vmc_meta_t* vmc_meta, const dir_entry_t unlinked_file, 
 	return 0;
 }
 
-int ps2mcfs_rmdir(const vmc_meta_t* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent) {
+int ps2mcfs_rmdir(const struct vmc_meta* vmc_meta, const dir_entry_t removed_dir, const dir_entry_t parent, size_t index_in_parent) {
 	// Remove children starting at index=2 (skip `.` and `..` dummy entries)
 	for (int i = 2; i < removed_dir.length; ++i) {
 		// get and free all the clusters

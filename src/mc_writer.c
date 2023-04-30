@@ -99,12 +99,12 @@ int mc_writer_write_empty(const superblock_t* superblock, FILE* output_file) {
     while (fat_entries_written < max_fat_entries) {
         DEBUG_LOG("Writing FAT table (%u / %u)", fat_entries_written + 1, max_fat_entries);
         memset(page_buffer, 0xFF, physical_page_size);
-        for (int i = 0; i < superblock->page_size / sizeof(fat_entry_t) && fat_entries_written < max_fat_entries; ++i, ++fat_entries_written) {
-            fat_entry_t entry = {.entry = {.occupied = 0, .next_cluster = CLUSTER_INVALID}};
+        for (int i = 0; i < superblock->page_size / sizeof(union fat_entry) && fat_entries_written < max_fat_entries; ++i, ++fat_entries_written) {
+            union fat_entry entry = {.entry = {.occupied = 0, .next_cluster = CLUSTER_INVALID}};
             if (fat_entries_written == 0) {
                 entry.entry.occupied = 1;
             }
-            memcpy(page_buffer + i * sizeof(fat_entry_t), &entry, sizeof(fat_entry_t));
+            memcpy(page_buffer + i * sizeof(union fat_entry), &entry, sizeof(union fat_entry));
         }
         WRITE_ECC();
         fwrite(page_buffer, physical_page_size, 1, output_file);
