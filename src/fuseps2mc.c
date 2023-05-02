@@ -249,8 +249,9 @@ void usage(FILE* stream, const char* program_name) {
 		stream,
 		"Usage: %s <memory-card-image> <mountpoint> [OPTIONS]\n"
 		"Mounts a Sony PlayStation 2 memory card image as a local filesystem in userspace\n"
-		"Options:\n"
+		"\nfuseps2mcfs options:\n"
 		"    -S                     sync filesystem changes to the memorycard file\n"
+		"\nOptions:\n"
 		"    -h   --help            print help\n"
 		"    -V   --version         print version\n"
 		"    -f                     foreground operation\n"
@@ -299,7 +300,7 @@ int main(int argc, char** argv) {
 		.show_version = 0,
 		.singlethread = 0,
 		.foreground = 0,
-		.max_threads = 16
+		.max_threads = 10,
 	};
 
 	if (fuse_opt_parse(&args, &opts, CLI_OPTIONS, opt_proc) == -1)
@@ -346,6 +347,8 @@ int main(int argc, char** argv) {
 		);
 	}
 	else {
+		// memorycard sync operations are disabled
+		// create a memory buffer and copy the whole memory card file 
 		FILE* f = fopen(opts.mc_path, "rb+");
 		if (!f) {
 			fprintf(stderr, "error: could not open file: %s\n", opts.mc_path);

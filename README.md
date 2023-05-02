@@ -15,22 +15,43 @@ Implemented filesystem operations:
  * unlink
  * rename
 
-The implemented operations allow basic read/write commands: mkdir, touch, cat, less, rm, mv, etc. However, writes are not persistent in the sense that changes are lost when the filesystem is unmounted.
+The implemented operations allow most read/write commands: mkdir, touch, cat, less, rm, mv, etc.
+
+
+### Mounting memory card files
+
+The following command can be used to mount a memory card file into a directory mountpoint
+```
+Usage: bin/fuseps2mc <memory-card-image> <mountpoint> [OPTIONS]
+Mounts a Sony PlayStation 2 memory card image as a local filesystem in userspace
+
+fuseps2mcfs options:
+    -S                     sync filesystem changes to the memorycard file
+
+Options:
+    -h   --help            print help
+    -V   --version         print version
+    -f                     foreground operation
+    ...
+```
+
+The only specific flag is `-S` which allows the program to save the filesystem changes into the memory card file.
+Please note that ps2mcfs is still in early development, so the use of this flag is discouraged as it may cause file corruption.
 
 Also, some filesystem status considerations:
- * access times are missing (they're not supported by the filesystem specification). Files will show as being last accessed in Jan 1st of 1970
+ * access times are missing (they're not supported by the PS2 filesystem specification). Files will show as being last accessed in Jan 1st of 1970
  * user/group ownership is missing (not supported either). Files will appear as being owned by the same user and group that mounted the filesystem
  * Per-file permissions are supported, but not umasks. Newly created files will appear as having the most permissive combination of permissions from the umask that FUSE provides
- * The timezone for create/modify times for files is always GMT+9:00 (Japan time zone). This is not yet implemented but it is expected to cause issues with some programs. For example, vim will create swap files for a file, warn that the file is already being edited and will not delete the swap files after exit.
 
-The following command can be used to mount a filesystem into a directory mount point
-```
-Usage: bin/fuseps2mc <ps2-memory-card-image> <mountpoint> [FUSE options]
-```
+### Obtaining memory card files
 
-You can obtain a PS2 virtual memory card image by storing it into a USB drive using [Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader) or, if using PCSX2 emulator, by copying the .mcd files from `~/.config/PCSX2/memcards`.
+There are several ways you can obtain or create memory card images:
 
-The following command can be used to create an empty memory card image
+ * A PS2 virtual memory card image can be obtained from real hardware by storing it into a USB drive using [Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader) (you will need a PS2 capable of running homebrew applications)
+ * A memory card file can be obtained using the PCSX2 emulator, by copying the `.ps2` files from `~/.config/PCSX2/memcards`. It's strongly recommended that you format the memory card using the PS2 browser if it's not already formatted.
+ * You can create a formatted memory card file using the `mkfs.ps2` binary included in this project (see below)
+
+The following command can be used to create an empty memory card image:
 ```
 Usage: bin/mkfs.ps2 -o OUTPUT_FILE [-s SIZE] [-e] [-h]
 Create a virtual memory card image file.
@@ -39,6 +60,17 @@ Create a virtual memory card image file.
   -e, --ecc             Add ECC bytes to the generated file
   -o, --output=FILE     Set the output file
   -h, --help            Show this help
+```
+
+It's worth noting that PCSX2 `.ps2` files include error correcting codes (ECC data), while Open PS2 Loader `.vmc` files usually don't.
+
+This means that you will want to use the following command to generate memory cards for OPL:
+```sh
+bin/mkfs.ps2 -o SLES-XXX.vmc -s 8
+```
+And the following command for PCSX2:
+```sh
+bin/mkfs.ps2 -o Mcd002.ps2 -s 8 -e
 ```
 
 ### Building
