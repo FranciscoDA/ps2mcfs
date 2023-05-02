@@ -232,8 +232,6 @@ struct cli_options {
 };
 
 static const struct fuse_opt CLI_OPTIONS[] = {
-	//FUSE_OPT_KEY("--mc ", OPT_KEY_MC_PATH),
-	//FUSE_OPT_KEY("-i ",   OPT_KEY_MC_PATH),
 	{.templ = "-S",             .offset = offsetof(struct cli_options, sync_to_fs),   .value = true},
 	{.templ = "-h",             .offset = offsetof(struct cli_options, show_help),    .value = 1},
 	{.templ = "--help",         .offset = offsetof(struct cli_options, show_help),    .value = 1},
@@ -310,7 +308,6 @@ int main(int argc, char** argv) {
 
 	// code below is based on the implementation of `fuse_main_real()` from libfuse
 	int res;
-	struct fuse_loop_config *loop_config = NULL;
 
 	if (opts.show_version) {
 		printf("FUSE library version %u.%u\n", FUSE_MAJOR_VERSION, FUSE_MINOR_VERSION);
@@ -340,6 +337,13 @@ int main(int argc, char** argv) {
 
 	if (opts.sync_to_fs) {
 		vmc_metadata.file = fopen(opts.mc_path, "rb+");
+		fprintf(
+			stderr,
+			"WARNING: Opening memory card file \"%s\" for read and write operations.\n"
+			"This may cause data corruption as fuseps2mcfs is still in early development.\n"
+			"Consider running without the -S flag.\n",
+			opts.mc_path
+		);
 	}
 	else {
 		FILE* f = fopen(opts.mc_path, "rb+");
@@ -392,20 +396,13 @@ int main(int argc, char** argv) {
 	if (opts.singlethread)
 		res = fuse_loop(fuse);
 	else {
-		loop_config = fuse_loop_cfg_create();
-		if (loop_config == NULL) {
-			res = 7;
-			goto out3;
-		}
-
-		fuse_loop_cfg_set_clone_fd(loop_config, 0);
-
-		fuse_loop_cfg_set_idle_threads(loop_config, 100);
-		fuse_loop_cfg_set_max_threads(loop_config, opts.max_threads);
+		struct fuse_loop_config loop_config = {0};
+		loop_config.clone_fd = 0;
+		loop_config.max_idle_threads = 100;
 		#if FUSE_USE_VERSION < 32
-		res = fuse_loop_mt(fuse, loop_config->clone_fd);
+		res = fuse_loop_mt(fuse, loop_config.clone_fd);
 		#else
-		res = fuse_loop_mt(fuse, loop_config);
+		res = fuse_loop_mt(fuse, &loop_config);
 		#endif
 	}
 	if (res)
@@ -417,7 +414,6 @@ out3:
 out2:
 	fuse_destroy(fuse);
 out1:
-	fuse_loop_cfg_destroy(loop_config);
 	free(opts.mountpoint);
 	fuse_opt_free_args(&args);
 

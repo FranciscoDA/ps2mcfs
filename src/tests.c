@@ -47,10 +47,10 @@ static MunitResult test_fat_truncate(const MunitParameter params[], void* data) 
 	munit_assert_long(count_occupied_clusters(vmc_meta), ==, 1);
 
 	// extend
-	fat_truncate(vmc_meta, vmc_meta->superblock->root_cluster, 2);
+	fat_truncate(vmc_meta, vmc_meta->superblock.root_cluster, 2);
 	munit_assert_long(count_occupied_clusters(vmc_meta), ==, 2);
 	// no-op
-	fat_truncate(vmc_meta, vmc_meta->superblock->root_cluster, 2);
+	fat_truncate(vmc_meta, vmc_meta->superblock.root_cluster, 2);
 	munit_assert_long(count_occupied_clusters(vmc_meta), ==, 2);
 
 	// extend
