@@ -122,9 +122,9 @@ cluster_t fat_find_free_cluster(const struct vmc_meta* vmc_meta, cluster_t clus)
 cluster_t fat_truncate(const struct vmc_meta* vmc_meta, cluster_t clus, size_t truncated_length) {
 	union fat_entry fat_value = fat_get_table_entry(vmc_meta, clus);
 	while (truncated_length > 1) {
-		--truncated_length;
 		if (!fat_value.entry.occupied || fat_value.raw == FAT_ENTRY_TERMINATOR.raw)
 			break;
+		--truncated_length;
 		clus = fat_value.entry.next_cluster;
 		fat_value = fat_get_table_entry(vmc_meta, clus);
 	}
@@ -153,20 +153,21 @@ cluster_t fat_truncate(const struct vmc_meta* vmc_meta, cluster_t clus, size_t t
 		return last_cluster;
 	}
 	// case 2: truncated size is greater than the size of the list
-	while (truncated_length > 0) {
+	// add new clusters until we reach the desired truncated length
+	while (truncated_length > 1 && fat_value.raw == FAT_ENTRY_TERMINATOR.raw) {
 		cluster_t new_clus = fat_find_free_cluster(vmc_meta, 0);
-		// we might run out of space while allocating new clusters
-		// in that case, delete the chain we just built and return
 		if (new_clus == CLUSTER_INVALID) {
+			// we might run out of space while allocating new clusters
+			// in that case, delete the chain we just built and return
 			fat_truncate(vmc_meta, last_cluster, 1);
 			return CLUSTER_INVALID;
 		}
 		// make `clus` point to `new_clus`
-		union fat_entry new_fat_value = { .entry = { .next_cluster = new_clus, .occupied = 1} };
-		fat_set_table_entry(vmc_meta, clus, new_fat_value);
+		fat_set_table_entry(vmc_meta, clus, (union fat_entry) { .entry = { .next_cluster = new_clus, .occupied = 1} });
 		// make `new_clus` the new terminator of the linked list
-		fat_set_table_entry(vmc_meta, new_clus, FAT_ENTRY_TERMINATOR);
 		clus = new_clus;
+		fat_value = FAT_ENTRY_TERMINATOR;
+		fat_set_table_entry(vmc_meta, new_clus, fat_value);
 		--truncated_length;
 	}
 	return clus;
