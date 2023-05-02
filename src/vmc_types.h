@@ -1,19 +1,20 @@
 #ifndef _VMC_TYPES_H_
 #define _VMC_TYPES_H_
 
-#include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 
 typedef uint32_t cluster_t; // cluster index
 
-typedef union {
+union fat_entry {
 	struct {
 		cluster_t next_cluster: 31; // next cluster index in the linked list
 		cluster_t occupied: 1;      // when flag is 1, the cluster at this index is allocated with data
 	} entry;
-	cluster_t raw; // the raw 32-bit value
-} fat_entry_t; // type of an entry in the FAT table for a cluster
+	cluster_t raw; // the raw 32-bit value for convenient access
+}; // type of an entry in the FAT table for a cluster
 
 typedef uint32_t physical_offset_t; // absolute physical offset in bytes from the start of the memory card
 typedef uint32_t logical_offset_t; // logical offset in bytes relative from the start of a cluster, file or directory entry
@@ -22,10 +23,10 @@ typedef uint32_t logical_offset_t; // logical offset in bytes relative from the 
 static const cluster_t CLUSTER_INVALID = 0xFFFFFFFF;
 
 // The sentinel value used to denote the end of a linked list in the FAT table
-static const fat_entry_t FAT_ENTRY_TERMINATOR = { .raw = CLUSTER_INVALID };
+static const union fat_entry FAT_ENTRY_TERMINATOR = { .raw = CLUSTER_INVALID };
 
 // Value used to mark fat entries as unassigned
-static const fat_entry_t FAT_ENTRY_FREE = { .entry = { .next_cluster = 0, .occupied = 0} };
+static const union fat_entry FAT_ENTRY_FREE = { .entry = { .next_cluster = 0, .occupied = 0} };
 
 typedef struct {
 	char _unused;
@@ -40,10 +41,10 @@ typedef struct {
 typedef struct {
 	uint16_t mode;
 	uint16_t _unused0;
-	uint32_t length;    // Length in bytes if a file, or entries if a directory. 
+	uint32_t length;    // Length in bytes if a file, or entries if a directory.
 	date_time_t creation;
 	cluster_t cluster;  // First cluster of the file, or 0xFFFFFFFF for an empty file. In "." entries this the first cluster of this directory's parent directory instead
-	uint32_t dir_entry; // Only in "." entries. Entry of this directory in its parent's directory. 
+	uint32_t dir_entry; // Only in "." entries. Entry of this directory in its parent's directory.
 	date_time_t modification;
 	uint32_t attributes;
 	char _unused1[28];
@@ -115,11 +116,12 @@ static const superblock_t DEFAULT_SUPERBLOCK = {
 	.card_flags = 0x2a // ecc disabled
 };
 
-typedef struct {
-	superblock_t* superblock;
-	void* raw_data;
+struct vmc_meta {
+	superblock_t superblock;
+	FILE* file;
+	//void* raw_data;
 	size_t page_spare_area_size;
 	uint8_t ecc_bytes;
-} vmc_meta_t;
+};
 
 #endif
